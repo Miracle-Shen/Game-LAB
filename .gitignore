@@ -8,3 +8,6 @@ Thumbs.db
 node_modules/
 coverage/
 *.log
+
+dist/
+.vite/

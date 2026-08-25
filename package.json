@@ -1,0 +1,16 @@
+{
+  "name": "fx-lab",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "FX LAB - 游戏与音乐特效案例实验室",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "validate": "node --check scripts/app.js scripts/data.js scripts/effects.js scripts/effects/component-registry.js && node scripts/validate-components.mjs"
+  },
+  "devDependencies": {
+    "vite": "^5.4.21"
+  }
+}
