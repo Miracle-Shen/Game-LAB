@@ -88,7 +88,7 @@ node scripts/validate-components.mjs
 
 ### 游戏音效
 
-音效库现有 62 个可直接使用的 CC0 case：保留 Godot Audio Effects demo 的 7 个 WAV，从 10 套 Kenney 音频包中精选 40 个 OGG，并从 Juhani Junkala / SubspaceAudio 的 512 Sound Effects (8-bit style) 中精选 15 个 WAV。内容覆盖界面、正负反馈、冲击、移动、电子、信号、棋牌、拟音、复古动作、短提示乐和英文语音；每个音效都支持试听、下载、模糊搜索、场景分类与固定链接。
+音效库现有 70 个可直接使用的 CC0 case：保留 Godot Audio Effects demo 的 7 个 WAV，从 10 套 Kenney 音频包中精选 40 个 OGG，从 Juhani Junkala / SubspaceAudio 的 512 Sound Effects (8-bit style) 中精选 15 个 WAV，并从 OpenGameArt 的自然环境与 rubberduck RPG 音效包中精选 8 个素材。内容覆盖界面、正负反馈、冲击、移动、电子、信号、棋牌、拟音、复古动作、短提示乐、英文语音、自然环境、魔法和怪物角色；每个音效都支持试听、下载、模糊搜索、场景分类与固定链接。
 
 其他项目可以直接导入 `scripts/sound-library.js`，或在页面运行后使用：
 

@@ -86,6 +86,14 @@ import voiceGameOver from "./sound/voice-game-over/index.js";
 import voiceHighScore from "./sound/voice-high-score/index.js";
 import voiceCombo from "./sound/voice-combo/index.js";
 import voiceWinner from "./sound/voice-winner/index.js";
+import birdChirping from "./sound/bird-chirping/index.js";
+import thunderstormRain from "./sound/thunderstorm-rain/index.js";
+import waterSplash from "./sound/water-splash/index.js";
+import magicCast from "./sound/magic-cast/index.js";
+import monsterRoar from "./sound/monster-roar/index.js";
+import chainRattle from "./sound/chain-rattle/index.js";
+import gemPickup from "./sound/gem-pickup/index.js";
+import lockRelease from "./sound/lock-release/index.js";
 
 export const effectComponents = [
   magneticParticleField,
@@ -176,6 +184,14 @@ export const effectComponents = [
   voiceHighScore,
   voiceCombo,
   voiceWinner,
+  birdChirping,
+  thunderstormRain,
+  waterSplash,
+  magicCast,
+  monsterRoar,
+  chainRattle,
+  gemPickup,
+  lockRelease,
 ];
 
 export const gameCases = effectComponents
