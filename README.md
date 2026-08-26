@@ -10,6 +10,7 @@
 - 组件层：`scripts/effects/components/{category}/{id}/` 一张卡片一个完整目录；注册表校验组件、分类与 Hash。
 - 页面层：`scripts/app.js` 渲染首页、目录、详情和技术方案，并管理视觉效果与音频播放。
 - 音效检索：`scripts/sound-library.js` 提供模糊排序、阈值判定和未命中音效的生成 prompt。
+- 特效检索：`scripts/game-library.js` 按标题、机制、来源与标签进行模糊排序，并支持一级标签组合筛选。
 - 推荐音乐链路：歌词时间轴 -> 关键词词典 -> text2vec 语义兜底 -> 特效调度器 -> Canvas / tsParticles / Three.js / Butterchurn。
 
 游戏特效均为根据公开项目能力重新实现的 Canvas 效果，不包含 Unity、Godot 或 AGPL 项目的代码与素材。音乐特效包含 Stims 的 MilkDrop 预设录屏与 Performous libre song pack 的真实歌曲、歌词和音高谱；每项素材及其许可证记录在对应 case 的 `assets/ATTRIBUTION.md`。
@@ -17,6 +18,13 @@
 ## Case List
 
 ### 游戏特效
+
+目录页支持 `科技、战斗、休闲、奖励、策略、探索、节奏` 七类标签筛选；搜索会同时匹配中文标题、英文副标题、机制摘要、来源和每张卡片的细分标签。
+
+```js
+window.__FX_LAB__.gameLibrary.search("迷雾");
+window.__FX_LAB__.gameLibrary.search("pary", { limit: 3, threshold: 0.22 });
+```
 
 高科技交互：
 
@@ -34,16 +42,54 @@
 
 经典玩法：
 
-1. 晶矿开采：矿石耐久、晶体暴露和战利品飞散
-2. 合成进化：单位吸附、融合闪光和等级成长
-3. 棋盘横扫：消消乐横纵火箭和清屏道具
-4. 跑酷冲刺：跑道偏移、跳跃、金币和速度线
-5. 农场丰收：作物成熟波、收获金币和叶片粒子
-6. 宝箱喷奖：开盖、金币喷射、闪光和烟尘落地
-7. 幸运转盘：加速、减速定格和中奖爆闪
-8. 奖励归仓：奖励沿弧线飞入 HUD 计数器
+1. 棋盘横扫：消消乐横纵火箭和清屏道具
+2. 跑酷冲刺：跑道偏移、跳跃、金币和速度线
+3. 宝箱喷奖：开盖、金币喷射、闪光和烟尘落地
+4. 幸运转盘：加速、减速定格和中奖爆闪
+5. 奖励归仓：奖励沿弧线飞入 HUD 计数器
 
-参考来源包括 Three.js、Unity VFX Graph Samples、VfxGraphAssets、WebGL Fluid Simulation、PixiJS Particle Emitter、Matter.js、Godot Demo Projects、Kenney Particle Pack 与 canvas-confetti。奖励反馈使用的粒子贴图及来源记录在对应 case 的 `assets/ATTRIBUTION.md`；Unity 样例仅用于视觉研究，不复用受 Unity Companion License 限制的代码或素材。
+战斗与策略反馈：
+
+1. 临界弹反：时机窗口、格挡闪光与连胜计数
+2. 连锁闪电：多目标选取、分叉电弧与命中反馈
+3. 蓄力重击：按压聚能、目标跟随与分级冲击
+4. 命中停顿：短暂停帧、白闪、震屏与伤害跳字
+5. 冲刺残影：延迟姿态、染色叠影与弧线位移
+6. 目标漩涡：向心粒子、锁定刻度与核心坍缩
+7. 部署脉冲：范围预览、塔体落地与升级光柱
+8. KO 终结定格：终结命中、画面抽色与胜方聚光
+
+GameCraft-Bench 扩展反馈：
+
+1. 时序幽灵回放：倒带扫描、历史轨迹与多轮行动分身
+2. 潜行警戒锥：巡逻视野、遮挡空间与分级侦测警报
+3. 节奏分级判定：四轨音符、判定线、连击与 Miss 碎裂
+4. 弹道预测轨迹：抛物线预览、移动目标与落点冲击
+5. 战争迷雾揭示：拖动探索、柔边视野与永久地图填充
+6. Boss 危险预警：扇形、圆形和直线攻击区的蓄力倒计时
+7. 捕获轨迹反馈：投掷弧线、三段摇晃、成功与挣脱结果
+8. 理智值扭曲：色差、重影、闪烁、噪线与视野收缩
+9. 结构连锁坍塌：承重失效、裂纹、粉尘与砖块分层下落
+10. 近失冲突警告：预测航线、接近环、最短距离与改道
+11. 连击断裂：倍率弹跳、颜色升阶与文字切片解体
+12. 轨道冲突信号：占用区、道岔、红绿信号与碰撞倒计时
+
+OpenGame 扩展反馈：
+
+1. 地面冲击波：同心震荡环、裂纹和碎屑抛射
+2. 导弹齐射锁定：旋转准星、弧形尾迹和错峰命中
+3. 终极光束扫射：蓄力核心、宽光束与方向余辉
+4. 魔法共鸣连锁：卡牌光边、旋转符文与倍率递增
+5. 法术失效烟雾：断裂符文、灰紫烟雾与坠落火星
+6. 答题攻击反噬：正确答案进攻、错误答案自身反冲
+7. 红绿灯扫描：状态色块、扫描线与冻结剪影
+8. 淘汰痕迹留存：短时冲击结束后保留弱化场地标记
+9. 可破坏障碍：耐久分段、裂纹扩散与地块解锁
+10. 波次清场级联：敌群顺序消散、奖励回流与阶段横幅
+11. 弹丸命中连锁：飞行尾迹、命中环和连击倍率
+12. 掩体遮挡淡化：角色进入前景建筑后的透明化与描边
+
+参考来源包括 Three.js、Unity VFX Graph Samples、VfxGraphAssets、WebGL Fluid Simulation、PixiJS Particle Emitter、Matter.js、Godot Demo Projects、OpenGame、GameCraft-Bench、Kenney Particle Pack 与 canvas-confetti。奖励反馈使用的粒子贴图及来源记录在对应 case 的 `assets/ATTRIBUTION.md`；Unity、OpenGame 与 GameCraft-Bench 样例仅用于机制研究，不复制品牌角色、参考解答代码或受限媒体。
 
 ## 可插拔特效组件
 
@@ -53,15 +99,15 @@
 卡片 id = component 字段 = 组件 id = Hash 最后一段
 ```
 
-例如 `farm-harvest` 位于 `scripts/effects/components/game/farm-harvest/`，固定链接是 `#/game/farm-harvest`。组件通过统一协议声明：
+例如 `runner-boost` 位于 `scripts/effects/components/game/runner-boost/`，固定链接是 `#/game/runner-boost`。组件通过统一协议声明：
 
 ```js
 defineEffectComponent({
-  id: "farm-harvest",
+  id: "runner-boost",
   category: "game",
   draw,
-  card: { title: "农场丰收", /* ... */ },
-  createState: () => ({ harvestCount: 0 }),
+  card: { title: "跑酷冲刺", /* ... */ },
+  createState: () => ({ coinCount: 0 }),
   onPointerDown({ state, point, now }) {},
   onPointerMove({ state, point, event }) {},
   onPointerUp({ state, event }) {},
@@ -79,16 +125,11 @@ node scripts/validate-components.mjs
 ### 音乐特效
 
 1. On the Run · Live：真实歌曲、逐音节歌词、麦克风音高、目标音符、准确率与响应式视觉的完整演唱闭环
-2. 天净沙 · 秋思：直接展示 Stims 的 MilkDrop 预设画面
-3. 雨霖铃 · 逐字：参考 Lyric Wave Player 的歌词时间轴
-4. 水调歌头 · 流体：参考 Butterchurn 的 WebGL MilkDrop 管线
-5. 将进酒 · 频谱：参考 audioMotion-analyzer 的频谱层级
-6. 春江花月夜 · 分镜：参考 Glitchframe 的歌词视频与动态排字流程
-7. 春江 · 声景：麦克风响度逐词推进歌词，实时音高驱动水面、月轮、流光和地平线转场
+2. 春江 · 声景：麦克风响度逐词推进歌词，实时音高驱动水面、月轮、流光和地平线转场
 
 ### 游戏音效
 
-音效库现有 70 个可直接使用的 CC0 case：保留 Godot Audio Effects demo 的 7 个 WAV，从 10 套 Kenney 音频包中精选 40 个 OGG，从 Juhani Junkala / SubspaceAudio 的 512 Sound Effects (8-bit style) 中精选 15 个 WAV，并从 OpenGameArt 的自然环境与 rubberduck RPG 音效包中精选 8 个素材。内容覆盖界面、正负反馈、冲击、移动、电子、信号、棋牌、拟音、复古动作、短提示乐、英文语音、自然环境、魔法和怪物角色；每个音效都支持试听、下载、模糊搜索、场景分类与固定链接。
+音频库现有 120 个可直接使用的 case：原有 74 个 CC0 音效之外，新增 OpenGame 六个官方演示中的 35 个短音效和 11 段 BGM。新增素材覆盖塔防建造、魔法答题、街机战斗、生存倒计时、城市动作与科幻潜入，按 OpenGame 仓库的 Apache-2.0 许可标注；原文件保持 WAV 或 MP3 编码，不去重、不重编码。每个音频都支持试听、下载、模糊搜索、场景分类与固定链接，逐项来源记录位于自身目录的 `assets/ATTRIBUTION.md`。
 
 其他项目可以直接导入 `scripts/sound-library.js`，或在页面运行后使用：
 

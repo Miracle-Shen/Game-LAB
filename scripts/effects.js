@@ -286,7 +286,6 @@ effectComponents.forEach((component) => effectComponentRegistry.register(compone
 class EffectCanvas {
   constructor(canvas) {
     this.canvas = canvas;
-    this.ctx = canvas.getContext("2d");
     this.effect = canvas.dataset.component || canvas.dataset.effect || "starfield";
     this.component = effectComponentRegistry.get(this.effect);
     this.intensity = Number(canvas.dataset.intensity || 1);
@@ -295,6 +294,19 @@ class EffectCanvas {
     this.start = performance.now();
     this.pauseTime = 0;
     this.interaction = this.createInteractionState();
+    this.renderer = null;
+    if (this.component?.createRenderer) {
+      try {
+        this.renderer = this.component.createRenderer({
+          canvas: this.canvas,
+          state: this.interaction,
+          intensity: this.intensity,
+        });
+      } catch (error) {
+        console.error(`Unable to initialize ${this.effect} renderer.`, error);
+      }
+    }
+    this.ctx = this.renderer ? null : canvas.getContext("2d");
     this.boundPointerMove = (event) => this.handlePointerMove(event);
     this.boundPointerDown = (event) => this.handlePointerDown(event);
     this.boundPointerUp = (event) => this.handlePointerUp(event);
@@ -349,6 +361,7 @@ class EffectCanvas {
       }
     }
     this.component?.onPointerMove?.({ event, point: next, state: this.interaction, instance: this });
+    this.renderer?.onPointerMove?.({ event, point: next, state: this.interaction, instance: this });
   }
 
   handlePointerDown(event) {
@@ -358,12 +371,14 @@ class EffectCanvas {
     this.interaction.impulses.push({ ...next, time: now });
     this.interaction.trail.push({ ...next, time: now });
     this.component?.onPointerDown?.({ event, point: next, now, state: this.interaction, instance: this });
+    this.renderer?.onPointerDown?.({ event, point: next, now, state: this.interaction, instance: this });
     this.canvas.setPointerCapture?.(event.pointerId);
   }
 
   handlePointerUp(event) {
     this.interaction.pointer.down = false;
     this.component?.onPointerUp?.({ event, state: this.interaction, instance: this });
+    this.renderer?.onPointerUp?.({ event, state: this.interaction, instance: this });
     if (event?.pointerId !== undefined && this.canvas.hasPointerCapture?.(event.pointerId)) {
       this.canvas.releasePointerCapture(event.pointerId);
     }
@@ -374,7 +389,12 @@ class EffectCanvas {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const width = Math.max(1, Math.floor(rect.width * dpr));
     const height = Math.max(1, Math.floor(rect.height * dpr));
-    if (this.canvas.width !== width || this.canvas.height !== height) {
+    if (this.renderer) {
+      this.width = rect.width;
+      this.height = rect.height;
+      this.dpr = dpr;
+      this.renderer.resize?.({ width: rect.width, height: rect.height, dpr });
+    } else if (this.canvas.width !== width || this.canvas.height !== height) {
       this.canvas.width = width;
       this.canvas.height = height;
       this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -389,11 +409,24 @@ class EffectCanvas {
     this.interaction.now = now;
     this.interaction.impulses = this.interaction.impulses.filter((event) => now - event.time < 3200);
     this.interaction.trail = this.interaction.trail.filter((point) => now - point.time < 1900).slice(-90);
-    drawer(this.ctx, this.width, this.height, now - this.start, this.intensity, this.interaction);
+    if (this.renderer) {
+      this.renderer.draw?.({
+        now,
+        elapsed: now - this.start,
+        width: this.width,
+        height: this.height,
+        dpr: this.dpr,
+        intensity: this.intensity,
+        state: this.interaction,
+      });
+    } else {
+      drawer(this.ctx, this.width, this.height, now - this.start, this.intensity, this.interaction);
+    }
   }
 
   setIntensity(value) {
     this.intensity = Number(value);
+    this.renderer?.setIntensity?.(this.intensity);
   }
 
   toggle() {
@@ -405,6 +438,7 @@ class EffectCanvas {
     this.start = performance.now();
     this.paused = false;
     this.interaction = this.createInteractionState();
+    this.renderer?.replay?.({ state: this.interaction });
   }
 
   destroy() {
@@ -415,6 +449,7 @@ class EffectCanvas {
     this.canvas.removeEventListener("pointerup", this.boundPointerUp);
     this.canvas.removeEventListener("pointercancel", this.boundPointerUp);
     this.canvas.removeEventListener("pointerleave", this.boundPointerLeave);
+    this.renderer?.destroy?.();
   }
 }
 

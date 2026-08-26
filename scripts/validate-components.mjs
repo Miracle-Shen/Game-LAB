@@ -33,6 +33,9 @@ Object.entries(categoryCases).forEach(([category, cases]) => {
     if (component && component.hash !== `#/${key}`) errors.push(`${key}: hash mismatch`);
     if (component && component.card !== item) errors.push(`${key}: card metadata must come from its component`);
     if (component?.renderer) errors.push(`${key}: renderer must be imported inside the case directory`);
+    if (category === "game" && (!Array.isArray(item.tags) || item.tags.length < 2)) {
+      errors.push(`${key}: game card requires at least two tags`);
+    }
     const directoryUrl = new URL(`./effects/components/${category}/${item.id}/`, import.meta.url);
     if (!existsSync(new URL("index.js", directoryUrl))) errors.push(`${key}: index.js is missing`);
     if (!existsSync(new URL("renderer.js", directoryUrl))) errors.push(`${key}: renderer.js is missing`);

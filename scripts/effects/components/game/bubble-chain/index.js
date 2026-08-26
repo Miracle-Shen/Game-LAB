@@ -4,7 +4,7 @@ import { draw } from "./renderer.js";
 export default defineEffectComponent({
   id: "bubble-chain", category: "game", draw,
   card: {
-    index: "G-06", track: "CASUAL GAME",
+    index: "G-06", track: "CASUAL GAME", tags: ["休闲", "泡泡", "连锁"],
     interaction: "戳破泡泡，冲击波会引爆附近目标",
     title: "泡泡连锁", subtitle: "SOFT BODY / CHAIN POP",
     summary: "漂浮、挤压、破裂和邻近传播适合泡泡龙、合成与放置类玩法。",

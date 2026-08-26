@@ -4,9 +4,17 @@ const BPM = 297.5;
 const BEAT_SECONDS = 60 / (BPM * 4);
 const AUDIO_LEAD_IN = 0.75;
 const CLIP_END_BEAT = 368;
-const BASE_MIDI = 60;
+// This recording's relative UltraStar chart uses C3 as pitch 0.
+const BASE_MIDI = 48;
 const MAX_PITCH_ERROR = 4;
+const IN_TUNE_SEMITONES = 0.5;
 const PITCH_SAMPLE_GAP = 0.18;
+const PITCH_DEBUG_INTERVAL = 350;
+const PITCH_MIN_MIDI = 46;
+const PITCH_MAX_MIDI = 70;
+const PITCH_VERTICAL_PADDING = 16;
+const MIN_PITCH_RMS = 0.004;
+const MIN_PITCH_CORRELATION = 0.45;
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
@@ -18,7 +26,7 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
-export function renderKaraokeDetail({ audioUrl }) {
+export function renderKaraokeDetail({ backingAudioUrl, originalAudioUrl }) {
   return `
     <section class="sing-console" data-sing-console aria-label="实时演唱舞台">
       <div class="sing-song-meta">
@@ -48,16 +56,22 @@ export function renderKaraokeDetail({ audioUrl }) {
         <p>ON THE RUN · VERSE 01</p>
         <div>
           <button type="button" data-sing-start>开始演唱</button>
-          <button type="button" data-sing-preview>试听</button>
+          <button type="button" data-sing-preview>原唱试听</button>
         </div>
-        <span data-sing-gate-status>MICROPHONE + PITCH TRACKING</span>
+        <span data-sing-gate-status>BACKING TRACK + MICROPHONE</span>
       </div>
       <div class="sing-credit">
         <a href="https://performous.org/songs" target="_blank" rel="noreferrer">SONG PACK / PERFORMOUS</a>
         <a href="https://github.com/monteslu/loukai" target="_blank" rel="noreferrer">MIC FLOW / LOUKAI</a>
         <a href="https://github.com/UltraStar-Deluxe/USDX" target="_blank" rel="noreferrer">NOTE FEEDBACK / USDX</a>
       </div>
-      <audio data-sing-audio src="${escapeHtml(audioUrl)}" preload="auto"></audio>
+      <audio
+        data-sing-audio
+        data-sing-backing-src="${escapeHtml(backingAudioUrl)}"
+        data-sing-original-src="${escapeHtml(originalAudioUrl)}"
+        src="${escapeHtml(backingAudioUrl)}"
+        preload="auto"
+      ></audio>
     </section>`;
 }
 
@@ -120,14 +134,22 @@ function noteName(midi) {
 }
 
 // Normalized autocorrelation follows the real-time microphone analysis pattern used by Loukai.
-function detectPitch(buffer, sampleRate) {
+export function detectPitch(buffer, sampleRate) {
+  let mean = 0;
+  for (let i = 0; i < buffer.length; i += 1) mean += buffer[i];
+  mean /= buffer.length;
+
   let energy = 0;
-  for (let i = 0; i < buffer.length; i += 1) energy += buffer[i] * buffer[i];
+  for (let i = 0; i < buffer.length; i += 1) {
+    const sample = buffer[i] - mean;
+    energy += sample * sample;
+  }
   const rms = Math.sqrt(energy / buffer.length);
-  if (rms < 0.012) return { frequency: 0, rms };
+  if (rms < MIN_PITCH_RMS) return { frequency: 0, rms, confidence: 0 };
 
   const minLag = Math.floor(sampleRate / 900);
   const maxLag = Math.min(Math.floor(sampleRate / 70), buffer.length >> 1);
+  const correlations = new Float32Array(maxLag + 1);
   let bestLag = 0;
   let bestCorrelation = 0;
 
@@ -137,31 +159,49 @@ function detectPitch(buffer, sampleRate) {
     let rightEnergy = 0;
     const limit = buffer.length - lag;
     for (let i = 0; i < limit; i += 1) {
-      const left = buffer[i];
-      const right = buffer[i + lag];
+      const left = buffer[i] - mean;
+      const right = buffer[i + lag] - mean;
       numerator += left * right;
       leftEnergy += left * left;
       rightEnergy += right * right;
     }
     const correlation = numerator / Math.sqrt(leftEnergy * rightEnergy || 1);
+    correlations[lag] = correlation;
     if (correlation > bestCorrelation) {
       bestCorrelation = correlation;
       bestLag = lag;
     }
   }
 
-  return {
-    frequency: bestCorrelation > 0.72 && bestLag ? sampleRate / bestLag : 0,
-    rms,
-  };
-}
+  if (bestCorrelation < MIN_PITCH_CORRELATION || !bestLag) {
+    return { frequency: 0, rms, confidence: bestCorrelation };
+  }
 
-function nearestTargetOctave(midi, target) {
-  if (!Number.isFinite(midi) || !Number.isFinite(target)) return midi;
-  let adjusted = midi;
-  while (adjusted - target > 6) adjusted -= 12;
-  while (target - adjusted > 6) adjusted += 12;
-  return adjusted;
+  // Harmonic periods can correlate as strongly as the fundamental. Prefer the first
+  // trustworthy local peak so a high vocal note is not reported several octaves low.
+  const peakThreshold = Math.max(MIN_PITCH_CORRELATION, bestCorrelation * 0.9);
+  for (let lag = minLag + 1; lag < maxLag; lag += 1) {
+    if (
+      correlations[lag] >= peakThreshold
+      && correlations[lag] >= correlations[lag - 1]
+      && correlations[lag] > correlations[lag + 1]
+    ) {
+      bestLag = lag;
+      bestCorrelation = correlations[lag];
+      break;
+    }
+  }
+
+  const left = correlations[bestLag - 1] || bestCorrelation;
+  const right = correlations[bestLag + 1] || bestCorrelation;
+  const curvature = 2 * bestCorrelation - left - right;
+  const lagOffset = curvature > 0 ? clamp((right - left) / (2 * curvature), -0.5, 0.5) : 0;
+
+  return {
+    frequency: sampleRate / (bestLag + lagOffset),
+    rms,
+    confidence: bestCorrelation,
+  };
 }
 
 function buildLyrics(container, lines) {
@@ -192,7 +232,11 @@ function resizeCanvas(canvas) {
   return { width: rect.width, height: rect.height, dpr };
 }
 
-function drawPitchLane(canvas, chart, time, history, activeNote, accuracy) {
+function pitchPixelsPerSemitone(height) {
+  return Math.max(1, (height - PITCH_VERTICAL_PADDING * 2) / (PITCH_MAX_MIDI - PITCH_MIN_MIDI));
+}
+
+function drawPitchLane(canvas, chart, time, history, activeNote, accuracy, hasVoice) {
   const { width, height, dpr } = resizeCanvas(canvas);
   const ctx = canvas.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -200,9 +244,8 @@ function drawPitchLane(canvas, chart, time, history, activeNote, accuracy) {
 
   const anchorX = width * 0.27;
   const pixelsPerSecond = Math.max(58, width * 0.12);
-  const minMidi = 58;
-  const maxMidi = 82;
-  const pitchY = (midi) => height - 16 - ((midi - minMidi) / (maxMidi - minMidi)) * (height - 32);
+  const pitchScale = pitchPixelsPerSemitone(height);
+  const pitchY = (midi) => height - PITCH_VERTICAL_PADDING - (midi - PITCH_MIN_MIDI) * pitchScale;
 
   ctx.strokeStyle = "rgba(255,255,255,.11)";
   ctx.lineWidth = 1;
@@ -219,7 +262,7 @@ function drawPitchLane(canvas, chart, time, history, activeNote, accuracy) {
     const x = anchorX + (note.start - time) * pixelsPerSecond;
     const noteWidth = Math.max(7, (note.end - note.start) * pixelsPerSecond - 2);
     const y = pitchY(note.midi) - 3;
-    const isActive = note === activeNote;
+    const isActive = note === activeNote && hasVoice;
     ctx.fillStyle = isActive
       ? `rgba(${Math.round(255 - accuracy * 118)},${Math.round(167 + accuracy * 88)},${Math.round(87 + accuracy * 126)},.95)`
       : note.golden ? "rgba(255,196,92,.78)" : "rgba(255,255,255,.32)";
@@ -320,19 +363,19 @@ function heartPoint(progress, centerX, centerY, scale, offset = 0) {
   };
 }
 
-function traceHeartRange(ctx, centerX, centerY, scale, start = 0, end = 1) {
+function traceHeartRange(ctx, centerX, centerY, scale, start = 0, end = 1, offset = 0) {
   const span = Math.max(0, end - start);
   if (!span) return;
   const steps = Math.max(2, Math.ceil(260 * span));
   ctx.beginPath();
   for (let i = 0; i <= steps; i += 1) {
-    const point = heartPoint(start + (i / steps) * span, centerX, centerY, scale);
+    const point = heartPoint(start + (i / steps) * span, centerX, centerY, scale, offset);
     i ? ctx.lineTo(point.x, point.y) : ctx.moveTo(point.x, point.y);
   }
 }
 
-function traceHeart(ctx, centerX, centerY, scale, progress = 1) {
-  traceHeartRange(ctx, centerX, centerY, scale, 0, progress);
+function traceHeart(ctx, centerX, centerY, scale, progress = 1, offset = 0) {
+  traceHeartRange(ctx, centerX, centerY, scale, 0, progress, offset);
 }
 
 function heartGrade(score) {
@@ -343,7 +386,7 @@ function heartGrade(score) {
   return "FRAGILE HEART";
 }
 
-function drawHeartLane(canvas, chart, history, progress, score, completed, now, activeNote, currentPitch) {
+function drawHeartLane(canvas, chart, history, progress, score, completed, now, activeNote, currentPitch, hasVoice) {
   const { width, height, dpr } = resizeCanvas(canvas);
   const ctx = canvas.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -352,6 +395,8 @@ function drawHeartLane(canvas, chart, history, progress, score, completed, now, 
   const centerX = width * 0.52;
   const centerY = height * 0.49;
   const scale = Math.min(width * 0.38, height * 0.43);
+  const pixelsPerSemitone = clamp(pitchPixelsPerSemitone(height), 8, 16);
+  const inTuneOffset = pixelsPerSemitone * IN_TUNE_SEMITONES;
   const quality = Number.isFinite(score) ? clamp(score / 100, 0, 1) : completed ? 0.82 : 0;
   const breathe = 1 + Math.sin(now * 0.0022) * (completed ? 0.018 : 0.008);
 
@@ -397,8 +442,8 @@ function drawHeartLane(canvas, chart, history, progress, score, completed, now, 
 
   ctx.save();
   ctx.lineCap = "round";
-  ctx.lineWidth = 12;
-  ctx.strokeStyle = "rgba(255,181,112,.07)";
+  ctx.lineWidth = Math.max(10, inTuneOffset * 2);
+  ctx.strokeStyle = "rgba(255,181,112,.1)";
   traceHeart(ctx, centerX, centerY, scale);
   ctx.stroke();
   ctx.lineWidth = 1.7;
@@ -409,8 +454,20 @@ function drawHeartLane(canvas, chart, history, progress, score, completed, now, 
   ctx.stroke();
   ctx.restore();
 
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineWidth = 1.8;
+  ctx.strokeStyle = "rgba(103,255,205,.58)";
+  ctx.shadowBlur = 7;
+  ctx.shadowColor = "rgba(63,255,194,.38)";
+  traceHeart(ctx, centerX, centerY, scale, 1, -inTuneOffset);
+  ctx.stroke();
+  traceHeart(ctx, centerX, centerY, scale, 1, inTuneOffset);
+  ctx.stroke();
+  ctx.restore();
+
   chart.notes.forEach((note) => {
-    const isActive = note === activeNote;
+    const isActive = note === activeNote && hasVoice;
     const isPast = note.heartEnd < progress;
     ctx.save();
     ctx.lineCap = "round";
@@ -426,15 +483,14 @@ function drawHeartLane(canvas, chart, history, progress, score, completed, now, 
   });
 
   if (history.length) {
-    const pixelsPerSemitone = clamp(scale * 0.04, 4, 10);
     ctx.save();
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     for (let i = 1; i < history.length; i += 1) {
       const previous = history[i - 1];
       const current = history[i];
-      const continuesNote = previous.noteId !== null && previous.noteId === current.noteId;
-      if (!continuesNote || !previous.voiced || !current.voiced || current.time - previous.time > PITCH_SAMPLE_GAP) continue;
+      const hasTargets = previous.noteId !== null && current.noteId !== null;
+      if (!hasTargets || !previous.voiced || !current.voiced || current.time - previous.time > PITCH_SAMPLE_GAP) continue;
       const from = heartPoint(previous.progress, centerX, centerY, scale, previous.errorSemitones * pixelsPerSemitone);
       const to = heartPoint(current.progress, centerX, centerY, scale, current.errorSemitones * pixelsPerSemitone);
       const accuracy = (previous.accuracy + current.accuracy) * 0.5;
@@ -458,13 +514,13 @@ function drawHeartLane(canvas, chart, history, progress, score, completed, now, 
 
   const cursorPoint = heartPoint(clamp(progress, 0, 1), centerX, centerY, scale);
   if (!completed) {
-    ctx.fillStyle = "rgba(255,206,125,.2)";
+    ctx.fillStyle = hasVoice ? "rgba(255,206,125,.2)" : "rgba(255,255,255,.05)";
     ctx.beginPath();
     ctx.arc(cursorPoint.x, cursorPoint.y, 13, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = "#fff9e8";
-    ctx.shadowBlur = 26;
-    ctx.shadowColor = "rgba(255,105,154,1)";
+    ctx.fillStyle = hasVoice ? "#fff9e8" : "rgba(255,255,255,.42)";
+    ctx.shadowBlur = hasVoice ? 26 : 5;
+    ctx.shadowColor = hasVoice ? "rgba(255,105,154,1)" : "rgba(255,255,255,.2)";
     ctx.beginPath();
     ctx.arc(cursorPoint.x, cursorPoint.y, 4.5, 0, Math.PI * 2);
     ctx.fill();
@@ -472,7 +528,6 @@ function drawHeartLane(canvas, chart, history, progress, score, completed, now, 
     if (activeNote) {
       const latest = history.at(-1);
       if (latest?.voiced && latest.noteId === activeNote.id) {
-        const pixelsPerSemitone = clamp(scale * 0.04, 4, 10);
         const livePoint = heartPoint(progress, centerX, centerY, scale, latest.errorSemitones * pixelsPerSemitone);
         ctx.fillStyle = latest.accuracy > 0.82 ? "#7dffd8" : "#ff9f78";
         ctx.shadowBlur = 18;
@@ -572,10 +627,12 @@ export function mountKaraoke({ root, instance, chartUrl }) {
   let musicAnalyser = null;
   let micAnalyser = null;
   let micStream = null;
+  let micSource = null;
   let micBuffer = null;
   let musicBuffer = null;
   let animationFrame = 0;
   let lastPitchCheck = 0;
+  let lastPitchDebug = 0;
   let activeLine = -1;
   let activeNote = null;
   let guideNote = null;
@@ -583,6 +640,8 @@ export function mountKaraoke({ root, instance, chartUrl }) {
   let completed = false;
   let mode = "normal";
   let micEnabled = false;
+  let singingSession = false;
+  let trackingMicrophone = false;
   let eligibleSamples = 0;
   let accuracyTotal = 0;
   let currentPitchMidi = 0;
@@ -615,13 +674,37 @@ export function mountKaraoke({ root, instance, chartUrl }) {
     musicAnalyser.connect(audioContext.destination);
   }
 
+  function selectAudioTrack(withMicrophone) {
+    const nextSource = withMicrophone ? audio.dataset.singBackingSrc : audio.dataset.singOriginalSrc;
+    audio.pause();
+    if (audio.src !== nextSource) {
+      audio.src = nextSource;
+      audio.load();
+    } else {
+      audio.currentTime = 0;
+    }
+  }
+
+  function setMicrophoneCapture(active) {
+    trackingMicrophone = Boolean(active && micEnabled);
+    micStream?.getAudioTracks().forEach((track) => {
+      track.enabled = trackingMicrophone;
+    });
+  }
+
   async function enableMicrophone() {
     if (micEnabled) return;
     if (!navigator.mediaDevices?.getUserMedia) throw new Error("unsupported");
     micStream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false },
+      audio: {
+        channelCount: { ideal: 1 },
+        sampleRate: { ideal: 44100 },
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
     });
-    const micSource = audioContext.createMediaStreamSource(micStream);
+    micSource = audioContext.createMediaStreamSource(micStream);
     micAnalyser = audioContext.createAnalyser();
     micAnalyser.fftSize = 2048;
     micAnalyser.smoothingTimeConstant = 0.15;
@@ -651,6 +734,8 @@ export function mountKaraoke({ root, instance, chartUrl }) {
     visualState.accuracy = 0;
     visualState.hitPulse = 0;
     visualState.lastHitNote = null;
+    visualState.micLevel = 0;
+    visualState.voiced = false;
     visualState.progress = 0;
     visualState.completed = false;
   }
@@ -671,9 +756,18 @@ export function mountKaraoke({ root, instance, chartUrl }) {
         now,
         activeNote,
         currentPitchMidi,
+        visualState.voiced,
       );
     } else {
-      drawPitchLane(lane, chart, audio.currentTime, performanceHistory, activeNote, visualState.accuracy);
+      drawPitchLane(
+        lane,
+        chart,
+        audio.currentTime,
+        performanceHistory,
+        activeNote,
+        visualState.accuracy,
+        visualState.voiced,
+      );
     }
   }
 
@@ -695,17 +789,20 @@ export function mountKaraoke({ root, instance, chartUrl }) {
   async function start(withMicrophone) {
     startButton.disabled = true;
     previewButton.disabled = true;
-    gateStatus.textContent = "LOADING AUDIO";
+    gateStatus.textContent = withMicrophone ? "LOADING BACKING TRACK" : "LOADING ORIGINAL VOCAL";
+    singingSession = withMicrophone;
+    setMicrophoneCapture(false);
     try {
       ensureAudioGraph();
       await audioContext.resume();
-      audio.currentTime = 0;
+      selectAudioTrack(withMicrophone);
       resetPerformance();
       visualState.heartMode = mode === "heart";
       stateElement.textContent = withMicrophone ? "CONNECTING" : "PLAYBACK";
       if (withMicrophone) {
         try {
           await enableMicrophone();
+          setMicrophoneCapture(true);
           stateElement.textContent = "LISTENING";
         } catch {
           stateElement.textContent = "MIC BLOCKED";
@@ -756,25 +853,44 @@ export function mountKaraoke({ root, instance, chartUrl }) {
       visualState.musicLevel = musicSum / musicBuffer.length / 255;
     }
 
-    if (micAnalyser && now - lastPitchCheck > 70) {
+    if (trackingMicrophone && micAnalyser && now - lastPitchCheck > 70) {
       lastPitchCheck = now;
       pitchSampled = true;
       micAnalyser.getFloatTimeDomainData(micBuffer);
       const detected = detectPitch(micBuffer, audioContext.sampleRate);
-      level = clamp(detected.rms * 8, 0, 1);
+      level = clamp(detected.rms * 20, 0, 1);
       visualState.micLevel += (level - visualState.micLevel) * 0.42;
       visualState.voiced = Boolean(detected.frequency);
       if (detected.frequency) {
         const rawMidi = midiFromFrequency(detected.frequency);
-        pitchMidi = activeNote ? nearestTargetOctave(rawMidi, activeNote.midi) : rawMidi;
+        pitchMidi = rawMidi;
         currentPitchMidi = pitchMidi;
         visualState.pitch = pitchMidi;
       } else {
         pitchMidi = 0;
         currentPitchMidi = 0;
       }
-    } else {
+      if (now - lastPitchDebug >= PITCH_DEBUG_INTERVAL) {
+        lastPitchDebug = now;
+        const targetMidi = activeNote?.midi ?? null;
+        console.info("[semantic-rose:mic-pitch]", {
+          timeSeconds: Number(time.toFixed(3)),
+          frequencyHz: detected.frequency ? Number(detected.frequency.toFixed(2)) : null,
+          microphoneMidi: pitchMidi ? Number(pitchMidi.toFixed(2)) : null,
+          microphoneNote: pitchMidi ? noteName(pitchMidi) : null,
+          targetMidi,
+          targetNote: targetMidi === null ? null : noteName(targetMidi),
+          centsOffset: pitchMidi && targetMidi !== null ? Math.round((pitchMidi - targetMidi) * 100) : null,
+          rms: Number(detected.rms.toFixed(4)),
+          confidence: Number(detected.confidence.toFixed(3)),
+        });
+      }
+    } else if (trackingMicrophone) {
       level = visualState.micLevel || 0;
+    } else {
+      visualState.voiced = false;
+      visualState.micLevel *= 0.8;
+      currentPitchMidi = 0;
     }
 
     let accuracy = 0;
@@ -829,7 +945,14 @@ export function mountKaraoke({ root, instance, chartUrl }) {
 
     const score = performanceScore();
     scoreElement.textContent = Number.isFinite(score) ? String(score).padStart(2, "0") : "--";
-    pitchElement.textContent = pitchMidi ? noteName(pitchMidi) : micEnabled ? "LISTEN" : "--";
+    pitchElement.textContent = pitchMidi
+      ? noteName(pitchMidi)
+      : trackingMicrophone && visualState.micLevel >= MIN_PITCH_RMS * 20 ? "ANALYZE" : trackingMicrophone ? "NO INPUT" : "--";
+    if (trackingMicrophone) {
+      stateElement.textContent = pitchMidi
+        ? "PITCH LOCK"
+        : visualState.micLevel >= MIN_PITCH_RMS * 20 ? "LISTENING" : "INPUT LOW";
+    }
     targetElement.textContent = completed && mode === "heart"
       ? heartGrade(score)
       : activeNote ? `TARGET ${noteName(activeNote.midi)}`
@@ -860,7 +983,10 @@ export function mountKaraoke({ root, instance, chartUrl }) {
     stateElement.textContent = "COMPLETE";
     gate.hidden = mode === "heart";
     gate.querySelector("p").textContent = "TAKE COMPLETE";
-    gateStatus.textContent = Number.isFinite(score) ? `ACCURACY ${score}` : "PLAY AGAIN";
+    gateStatus.textContent = singingSession && Number.isFinite(score)
+      ? `ACCURACY ${score}`
+      : singingSession ? "SING AGAIN" : "ORIGINAL PLAYBACK COMPLETE";
+    setMicrophoneCapture(false);
     startButton.textContent = "再唱一次";
     startButton.disabled = false;
     previewButton.disabled = false;
@@ -877,10 +1003,12 @@ export function mountKaraoke({ root, instance, chartUrl }) {
       if (!running) return;
       if (paused) {
         audio.pause();
+        setMicrophoneCapture(false);
         stateElement.textContent = "PAUSED";
       } else {
+        setMicrophoneCapture(singingSession);
         audio.play().catch(() => {});
-        stateElement.textContent = micEnabled ? "LISTENING" : "PLAYBACK";
+        stateElement.textContent = singingSession && micEnabled ? "LISTENING" : "PLAYBACK";
       }
     },
     replay() {
@@ -891,6 +1019,7 @@ export function mountKaraoke({ root, instance, chartUrl }) {
       visualState.heartMode = mode === "heart";
       running = true;
       visualState.playing = true;
+      setMicrophoneCapture(singingSession);
       gate.hidden = true;
       audio.play().catch(() => {});
       beginLoop();
@@ -899,6 +1028,7 @@ export function mountKaraoke({ root, instance, chartUrl }) {
       running = false;
       cancelAnimationFrame(animationFrame);
       audio.pause();
+      micSource?.disconnect();
       micStream?.getTracks().forEach((track) => track.stop());
       audioContext?.close().catch(() => {});
       startButton.removeEventListener("click", onStart);

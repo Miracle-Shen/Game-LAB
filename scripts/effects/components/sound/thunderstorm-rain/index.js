@@ -6,7 +6,7 @@ export default defineEffectComponent({
   card: {
     index: "S-64", title: "暴雨长雷", subtitle: "AMBIENCE / RAIN & THUNDER",
     summary: "连续雨幕中穿过一记绵长雷声，适合风暴关卡、阴暗户外和天气转场。",
-    audioCategory: "ambience", audioCategoryLabel: "环境",
+    audioCategory: "bgm", audioCategoryLabel: "BGM",
     keywords: ["暴雨", "雷声", "雷雨", "闪电", "风暴", "天气", "环境", "rain", "thunder", "lightning", "storm", "weather", "ambience"],
     useCases: ["风暴关卡", "天气转场", "阴暗户外"],
     audio: { src: new URL("./assets/rain-thunder.ogg", import.meta.url).href, format: "OGG", duration: 44.37 },

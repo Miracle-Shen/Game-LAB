@@ -4,7 +4,7 @@ import { draw } from "./renderer.js";
 export default defineEffectComponent({
   id: "hologram-scanner", category: "game", draw,
   card: {
-    index: "G-02", track: "HIGH-TECH",
+    index: "G-02", track: "HIGH-TECH", tags: ["科技", "扫描", "故障"],
     interaction: "左右拖动扫描线，点击制造信号故障",
     title: "全息扫描舱", subtitle: "HOLOGRAM / DATA SCAN",
     summary: "体积扫描线揭示机械目标，边缘重影和数据噪声随操作发生偏移。",

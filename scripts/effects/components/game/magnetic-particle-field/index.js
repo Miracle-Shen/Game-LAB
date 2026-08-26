@@ -6,7 +6,7 @@ export default defineEffectComponent({
   category: "game",
   draw,
   card: {
-    index: "G-01", track: "HIGH-TECH",
+    index: "G-01", track: "HIGH-TECH", tags: ["科技", "粒子", "交互"],
     interaction: "移动指针扭曲力场，按住后切换为引力模式",
     title: "磁场粒子核心", subtitle: "GPGPU PARTICLE FIELD",
     summary: "数百颗粒子围绕能量核心运行，指针实时改变轨道与磁场方向。",

@@ -10,7 +10,7 @@ class EffectComponentRegistry {
     if (this.#components.has(component.id)) {
       throw new Error(`Effect component already registered: ${component.id}`);
     }
-    if (typeof component.draw !== "function") {
+    if (typeof component.draw !== "function" && typeof component.createRenderer !== "function") {
       throw new TypeError(`Effect component renderer is missing: ${component.id}`);
     }
     const expectedHash = `#/${component.category}/${component.id}`;

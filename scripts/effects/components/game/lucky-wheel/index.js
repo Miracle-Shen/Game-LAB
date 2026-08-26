@@ -6,7 +6,7 @@ export default defineEffectComponent({
   createState: () => ({ spinCount: 0, lastSpin: 0 }),
   onPointerDown: ({ state, now }) => { state.custom.spinCount += 1; state.custom.lastSpin = now; },
   card: {
-    index: "G-15", track: "CASUAL REWARD",
+    index: "G-15", track: "CASUAL REWARD", tags: ["奖励", "转盘", "定格"],
     interaction: "点击转盘，触发加速、减速定格和中奖爆闪",
     title: "幸运转盘", subtitle: "SPIN / JACKPOT STOP",
     summary: "分区旋转、指针敲击、减速回弹和中奖星芒聚焦在开奖前后的核心反馈。",

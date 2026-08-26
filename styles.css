@@ -377,6 +377,87 @@ svg {
   background: var(--muted);
 }
 
+.game-browser-panel {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) auto auto;
+  gap: 18px;
+  align-items: center;
+  padding: 24px 5.5vw;
+  background: #08080a;
+  border-top: 1px solid var(--faint);
+  border-bottom: 1px solid var(--faint);
+}
+
+.game-search {
+  display: flex;
+  height: 48px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  background: #020203;
+  border: 1px solid var(--line);
+}
+
+.game-search svg {
+  width: 17px;
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.game-search input {
+  width: 100%;
+  min-width: 0;
+  color: var(--white);
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-size: 13px;
+  letter-spacing: 0;
+}
+
+.game-search input::placeholder {
+  color: rgba(240, 240, 250, 0.42);
+}
+
+.game-filters {
+  display: flex;
+  gap: 4px;
+}
+
+.game-filters button {
+  min-height: 36px;
+  padding: 0 12px;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.game-filters button:hover,
+.game-filters button:focus-visible,
+.game-filters button[aria-pressed="true"] {
+  color: var(--white);
+  border-bottom-color: var(--white);
+}
+
+.game-result-count {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+.game-result-count b {
+  color: var(--white);
+  font-size: 15px;
+}
+
 .case-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -511,6 +592,10 @@ svg {
   padding: 21px 22px 20px;
 }
 
+.game-catalog .case-copy {
+  min-height: 206px;
+}
+
 .case-copy > div:first-child p {
   margin: 0 0 9px;
   color: var(--muted);
@@ -531,6 +616,32 @@ svg {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.55;
+}
+
+.case-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.case-tags small {
+  padding: 4px 7px;
+  color: rgba(240, 240, 250, 0.68);
+  border: 1px solid rgba(240, 240, 250, 0.18);
+  border-radius: 3px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.game-no-results {
+  grid-column: 1 / -1;
+  min-height: 240px;
+  margin: 0;
+  padding: 96px 5.5vw;
+  color: var(--muted);
+  font-size: 18px;
+  text-align: center;
 }
 
 .case-meta {
@@ -1317,6 +1428,26 @@ svg {
   line-height: 1.7;
 }
 
+.detail-view[data-detail-component="fog-of-war-reveal"] .detail-copy,
+.detail-view[data-detail-component="fog-of-war-reveal"] .detail-note {
+  pointer-events: none;
+  transition: opacity 260ms ease, transform 260ms ease;
+}
+
+.detail-view[data-detail-component="fog-of-war-reveal"].is-cartography-active .detail-copy,
+.detail-view[data-detail-component="fog-of-war-reveal"].is-cartography-active .detail-note {
+  opacity: 0;
+  transform: translateY(12px);
+}
+
+.detail-view[data-detail-component="fog-of-war-reveal"] .detail-shade {
+  transition: opacity 260ms ease;
+}
+
+.detail-view[data-detail-component="fog-of-war-reveal"].is-cartography-active .detail-shade {
+  opacity: 0.28;
+}
+
 .music-detail .detail-copy {
   bottom: 148px;
   width: min(450px, 34vw);
@@ -1538,6 +1669,27 @@ svg {
 .effect-controls input {
   width: 110px;
   accent-color: var(--white);
+}
+
+.effect-controls .effect-select {
+  padding-right: 10px;
+}
+
+.effect-controls select {
+  width: min(210px, 25vw);
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  color: var(--white);
+  background: transparent;
+  font: 700 10px/1 system-ui, sans-serif;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.effect-controls select:focus-visible {
+  outline: 1px solid var(--white);
+  outline-offset: 4px;
 }
 
 .case-nav {
@@ -2135,6 +2287,20 @@ svg {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .game-browser-panel {
+    grid-template-columns: minmax(240px, 1fr) auto;
+  }
+
+  .game-filters {
+    grid-row: 2;
+    grid-column: 1 / -1;
+  }
+
+  .game-result-count {
+    grid-row: 1;
+    grid-column: 2;
+  }
+
   .sound-search-panel {
     grid-template-columns: minmax(240px, 1fr) auto;
   }
@@ -2498,6 +2664,32 @@ svg {
     min-height: 64svh;
   }
 
+  .game-browser-panel {
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+    padding: 18px 16px;
+  }
+
+  .game-search {
+    grid-column: 1 / -1;
+  }
+
+  .game-filters {
+    grid-row: 2;
+    grid-column: 1;
+    max-width: calc(100vw - 100px);
+    overflow-x: auto;
+  }
+
+  .game-filters button {
+    padding: 0 9px;
+  }
+
+  .game-result-count {
+    grid-row: 2;
+    grid-column: 2;
+  }
+
   .catalog-heading {
     width: calc(100% - 32px);
     padding: 0 0 46px 16px;
@@ -2578,6 +2770,10 @@ svg {
     padding: 13px 10px 12px;
   }
 
+  .game-catalog .case-copy {
+    min-height: 156px;
+  }
+
   .case-copy > div:first-child p {
     margin-bottom: 6px;
     overflow: hidden;
@@ -2593,6 +2789,15 @@ svg {
 
   .case-summary {
     display: none;
+  }
+
+  .case-tags {
+    gap: 4px;
+  }
+
+  .case-tags small {
+    padding: 3px 5px;
+    font-size: 7px;
   }
 
   .case-meta {
@@ -2658,6 +2863,12 @@ svg {
     right: 14px;
   }
 
+  .has-custom-controls .effect-controls {
+    left: 14px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
   .interaction-status {
     top: 88px;
     left: 14px;
@@ -2674,6 +2885,20 @@ svg {
 
   .effect-controls input {
     width: 92px;
+  }
+
+  .effect-controls .fighter-select {
+    order: 3;
+    width: auto;
+    max-width: calc(100vw - 28px);
+  }
+
+  .effect-controls .fighter-select span {
+    display: block;
+  }
+
+  .effect-controls select {
+    width: min(210px, 58vw);
   }
 
   .detail-copy {

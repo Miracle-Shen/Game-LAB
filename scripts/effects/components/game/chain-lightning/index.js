@@ -41,7 +41,7 @@ export default defineEffectComponent({
     state.custom.lastInput = state.custom.releasedAt;
   },
   card: {
-    index: "G-18", track: "SPELL COMBAT",
+    index: "G-18", track: "SPELL COMBAT", tags: ["战斗", "技能", "连锁"],
     interaction: "按住并依次划过能量节点，连接越多目标，闪电链和倍率越强",
     title: "连锁闪电", subtitle: "CHAIN / TARGET ROUTE",
     summary: "节点捕获、路径导电、逐段增压和满链爆发让一次拖动产生清晰的战术连锁感。",

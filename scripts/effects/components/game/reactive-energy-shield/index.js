@@ -4,7 +4,7 @@ import { draw } from "./renderer.js";
 export default defineEffectComponent({
   id: "reactive-energy-shield", category: "game", draw,
   card: {
-    index: "G-03", track: "HIGH-TECH",
+    index: "G-03", track: "HIGH-TECH", tags: ["科技", "防御", "冲击"],
     interaction: "在护盾任意位置点击，叠加冲击波与裂纹",
     title: "反应式能量盾", subtitle: "HEX SHIELD / IMPACT",
     summary: "冲击点沿六边形网格传导，波纹、裂纹和色散形成多层受击反馈。",

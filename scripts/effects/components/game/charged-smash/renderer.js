@@ -1,4 +1,10 @@
 import { clamp, hash, TAU } from "../../../shared/canvas.js";
+import { createFighterImageLoader, drawFighterImage, fighterAssetUrlsFromModules } from "../../../shared/fighter-library.js";
+
+const fighterAssetModules = typeof window === "undefined"
+  ? {}
+  : import.meta.glob("./assets/*.png", { eager: true, query: "?url", import: "default" });
+const getFighterImage = createFighterImageLoader(fighterAssetUrlsFromModules(fighterAssetModules));
 
 function drawCracks(ctx, x, y, radius, seed, alpha) {
   ctx.save();
@@ -109,23 +115,33 @@ export function draw(ctx, w, h, t, intensity, state) {
 
   const fighterX = w * 0.34;
   const fighterY = h * 0.7;
-  ctx.fillStyle = "#07100e";
-  ctx.strokeStyle = "rgba(189, 224, 207, 0.68)";
-  ctx.lineWidth = Math.max(1.5, size * 0.007);
-  ctx.beginPath();
-  ctx.arc(fighterX, fighterY - size * 0.15, size * 0.035, 0, TAU);
-  ctx.fill();
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(fighterX, fighterY - size * 0.11);
-  ctx.lineTo(fighterX, fighterY + size * 0.08);
-  ctx.moveTo(fighterX, fighterY - size * 0.05);
-  ctx.lineTo(fighterX - size * 0.07, fighterY + size * 0.02);
-  ctx.moveTo(fighterX, fighterY + size * 0.07);
-  ctx.lineTo(fighterX - size * 0.06, fighterY + size * 0.16);
-  ctx.moveTo(fighterX, fighterY + size * 0.07);
-  ctx.lineTo(fighterX + size * 0.07, fighterY + size * 0.16);
-  ctx.stroke();
+  const fighterImage = getFighterImage(state.custom.fighter, charge > 0.2 || impacts.length ? "attack" : "neutral");
+  const drewAsset = drawFighterImage(ctx, fighterImage, {
+    x: fighterX,
+    y: fighterY + size * 0.03,
+    size: size * 0.4,
+    glow: "#66ffc5",
+    blur: 8 + charge * 18,
+  });
+  if (!drewAsset) {
+    ctx.fillStyle = "#07100e";
+    ctx.strokeStyle = "rgba(189, 224, 207, 0.68)";
+    ctx.lineWidth = Math.max(1.5, size * 0.007);
+    ctx.beginPath();
+    ctx.arc(fighterX, fighterY - size * 0.15, size * 0.035, 0, TAU);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(fighterX, fighterY - size * 0.11);
+    ctx.lineTo(fighterX, fighterY + size * 0.08);
+    ctx.moveTo(fighterX, fighterY - size * 0.05);
+    ctx.lineTo(fighterX - size * 0.07, fighterY + size * 0.02);
+    ctx.moveTo(fighterX, fighterY + size * 0.07);
+    ctx.lineTo(fighterX - size * 0.06, fighterY + size * 0.16);
+    ctx.moveTo(fighterX, fighterY + size * 0.07);
+    ctx.lineTo(fighterX + size * 0.07, fighterY + size * 0.16);
+    ctx.stroke();
+  }
   drawHammer(ctx, fighterX + size * 0.055, fighterY - size * 0.02, size * 0.16, charge, t);
 
   impacts.forEach((impact, impactIndex) => {

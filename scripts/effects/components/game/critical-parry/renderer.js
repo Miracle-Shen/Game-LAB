@@ -1,6 +1,11 @@
 import { clamp, hash, TAU } from "../../../shared/canvas.js";
+import { createFighterImageLoader, drawFighterImage, fighterAssetUrlsFromModules } from "../../../shared/fighter-library.js";
 
 export const PARRY_CYCLE = 2600;
+const fighterAssetModules = typeof window === "undefined"
+  ? {}
+  : import.meta.glob("./assets/*.png", { eager: true, query: "?url", import: "default" });
+const getFighterImage = createFighterImageLoader(fighterAssetUrlsFromModules(fighterAssetModules));
 
 function drawFighter(ctx, cx, cy, scale) {
   ctx.save();
@@ -25,6 +30,22 @@ function drawFighter(ctx, cx, cy, scale) {
   ctx.lineTo(scale * 0.2, scale * 0.58);
   ctx.stroke();
   ctx.restore();
+}
+
+function drawSelectedFighter(ctx, fighter, cx, cy, size, result, resultAge) {
+  const pose = resultAge < 900
+    ? result === "miss" ? "hurt" : result === "idle" ? "neutral" : "attack"
+    : "neutral";
+  const image = getFighterImage(fighter, pose);
+  if (!drawFighterImage(ctx, image, {
+    x: cx,
+    y: cy,
+    size: size * 0.38,
+    glow: result === "perfect" && resultAge < 900 ? "#ffe08a" : "#8bceff",
+    blur: resultAge < 900 ? 18 : 8,
+  })) {
+    drawFighter(ctx, cx, cy, size * 0.17);
+  }
 }
 
 function drawShield(ctx, cx, cy, radius, glow) {
@@ -96,7 +117,7 @@ export function draw(ctx, w, h, t, intensity, state) {
   ctx.stroke();
   ctx.restore();
 
-  drawFighter(ctx, cx, cy + size * 0.08, size * 0.17);
+  drawSelectedFighter(ctx, state.custom.fighter, cx, cy + size * 0.12, size, state.custom.result, resultAge);
   drawShield(ctx, cx, cy, size * 0.085, windowGlow);
 
   ctx.strokeStyle = windowGlow > 0.15

@@ -6,7 +6,7 @@ export default defineEffectComponent({
   createState: () => ({ collected: 24, lastCollect: 0 }),
   onPointerDown: ({ state, now }) => { state.custom.collected += 1; state.custom.lastCollect = now; },
   card: {
-    index: "G-16", track: "CASUAL REWARD",
+    index: "G-16", track: "CASUAL REWARD", tags: ["奖励", "收集", "HUD"],
     interaction: "点击任意位置，把奖励沿弧线吸入右上角计数器",
     title: "奖励归仓", subtitle: "COLLECT / HUD FLY-IN",
     summary: "奖励从命中点分批起飞、弧线汇聚并撞击计数器，适合金币、体力与活动道具。",

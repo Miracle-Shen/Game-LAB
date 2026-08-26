@@ -1,4 +1,5 @@
 import magneticParticleField from "./game/magnetic-particle-field/index.js";
+import arcaneRift3d from "./game/arcane-rift-3d/index.js";
 import hologramScanner from "./game/hologram-scanner/index.js";
 import reactiveEnergyShield from "./game/reactive-energy-shield/index.js";
 import plasmaFluid from "./game/plasma-fluid/index.js";
@@ -6,23 +7,44 @@ import matchCascade from "./game/match-cascade/index.js";
 import bubbleChain from "./game/bubble-chain/index.js";
 import sliceRush from "./game/slice-rush/index.js";
 import comboParty from "./game/combo-party/index.js";
-import miningBurst from "./game/mining-burst/index.js";
-import mergeLab from "./game/merge-lab/index.js";
 import lineClear from "./game/line-clear/index.js";
 import runnerBoost from "./game/runner-boost/index.js";
-import farmHarvest from "./game/farm-harvest/index.js";
 import treasureBurst from "./game/treasure-burst/index.js";
 import luckyWheel from "./game/lucky-wheel/index.js";
 import rewardCollector from "./game/reward-collector/index.js";
 import criticalParry from "./game/critical-parry/index.js";
 import chainLightning from "./game/chain-lightning/index.js";
 import chargedSmash from "./game/charged-smash/index.js";
+import combatHitStop from "./game/combat-hit-stop/index.js";
+import dashAfterimage from "./game/dash-afterimage/index.js";
+import targetVortex from "./game/target-vortex/index.js";
+import towerPlacementPulse from "./game/tower-placement-pulse/index.js";
+import koFinish from "./game/ko-finish/index.js";
+import temporalGhostReplay from "./game/temporal-ghost-replay/index.js";
+import stealthAlertCone from "./game/stealth-alert-cone/index.js";
+import rhythmJudgement from "./game/rhythm-judgement/index.js";
+import ballisticTrajectory from "./game/ballistic-trajectory/index.js";
+import fogOfWarReveal from "./game/fog-of-war-reveal/index.js";
+import bossDangerTelegraph from "./game/boss-danger-telegraph/index.js";
+import captureOrbit from "./game/capture-orbit/index.js";
+import sanityDistortion from "./game/sanity-distortion/index.js";
+import structuralCollapse from "./game/structural-collapse/index.js";
+import nearMissWarning from "./game/near-miss-warning/index.js";
+import comboBreakShatter from "./game/combo-break-shatter/index.js";
+import signalRouteConflict from "./game/signal-route-conflict/index.js";
+import groundShockwave from "./game/ground-shockwave/index.js";
+import missileSalvoLock from "./game/missile-salvo-lock/index.js";
+import beamSweepUltimate from "./game/beam-sweep-ultimate/index.js";
+import magicResonanceChain from "./game/magic-resonance-chain/index.js";
+import spellFizzleSmoke from "./game/spell-fizzle-smoke/index.js";
+import quizBackfire from "./game/quiz-backfire/index.js";
+import redGreenScan from "./game/red-green-scan/index.js";
+import eliminationPersistence from "./game/elimination-persistence/index.js";
+import breakableObstacle from "./game/breakable-obstacle/index.js";
+import waveClearCascade from "./game/wave-clear-cascade/index.js";
+import projectileHitChain from "./game/projectile-hit-chain/index.js";
+import coverDepthFade from "./game/cover-depth-fade/index.js";
 import semanticRose from "./music/semantic-rose/index.js";
-import semanticSunset from "./music/semantic-sunset/index.js";
-import lyricRain from "./music/lyric-rain/index.js";
-import fluidLyrics from "./music/fluid-lyrics/index.js";
-import spectrumPlayer from "./music/spectrum-player/index.js";
-import storyboard from "./music/storyboard/index.js";
 import voiceLyricBloom from "./music/voice-lyric-bloom/index.js";
 import rewardDing from "./sound/reward-ding/index.js";
 import negativeBeeps from "./sound/negative-beeps/index.js";
@@ -94,9 +116,30 @@ import monsterRoar from "./sound/monster-roar/index.js";
 import chainRattle from "./sound/chain-rattle/index.js";
 import gemPickup from "./sound/gem-pickup/index.js";
 import lockRelease from "./sound/lock-release/index.js";
+import towerPlace from "./sound/tower-place/index.js";
+import towerUpgrade from "./sound/tower-upgrade/index.js";
+import buzzerLock from "./sound/buzzer-lock/index.js";
+import voiceFight from "./sound/voice-fight/index.js";
+import openTowerUpgrade from "./sound/open-tower-upgrade/index.js";
+import openSpit from "./sound/open-spit/index.js";
+import openJump from "./sound/open-jump/index.js";
+import openMeleeHit from "./sound/open-melee-hit/index.js";
+import openRangedShot from "./sound/open-ranged-shot/index.js";
+import openExplosion from "./sound/open-explosion/index.js";
+import openDamage from "./sound/open-damage/index.js";
+import openDeath from "./sound/open-death/index.js";
+import openCoin from "./sound/open-coin/index.js";
+import openVictory from "./sound/open-victory/index.js";
+import openUltimate from "./sound/open-ultimate/index.js";
+import openPlayfulBgm from "./sound/open-playful-bgm/index.js";
+import openCityBattleBgm from "./sound/open-city-battle-bgm/index.js";
+import openCarrierBattleBgm from "./sound/open-carrier-battle-bgm/index.js";
+import openCosmicBattleBgm from "./sound/open-cosmic-battle-bgm/index.js";
+import openSciFiBgm from "./sound/open-sci-fi-bgm/index.js";
 
 export const effectComponents = [
   magneticParticleField,
+  arcaneRift3d,
   hologramScanner,
   reactiveEnergyShield,
   plasmaFluid,
@@ -104,23 +147,44 @@ export const effectComponents = [
   bubbleChain,
   sliceRush,
   comboParty,
-  miningBurst,
-  mergeLab,
   lineClear,
   runnerBoost,
-  farmHarvest,
   treasureBurst,
   luckyWheel,
   rewardCollector,
   criticalParry,
   chainLightning,
   chargedSmash,
+  combatHitStop,
+  dashAfterimage,
+  targetVortex,
+  towerPlacementPulse,
+  koFinish,
+  temporalGhostReplay,
+  stealthAlertCone,
+  rhythmJudgement,
+  ballisticTrajectory,
+  fogOfWarReveal,
+  bossDangerTelegraph,
+  captureOrbit,
+  sanityDistortion,
+  structuralCollapse,
+  nearMissWarning,
+  comboBreakShatter,
+  signalRouteConflict,
+  groundShockwave,
+  missileSalvoLock,
+  beamSweepUltimate,
+  magicResonanceChain,
+  spellFizzleSmoke,
+  quizBackfire,
+  redGreenScan,
+  eliminationPersistence,
+  breakableObstacle,
+  waveClearCascade,
+  projectileHitChain,
+  coverDepthFade,
   semanticRose,
-  semanticSunset,
-  lyricRain,
-  fluidLyrics,
-  spectrumPlayer,
-  storyboard,
   voiceLyricBloom,
   rewardDing,
   negativeBeeps,
@@ -192,6 +256,26 @@ export const effectComponents = [
   chainRattle,
   gemPickup,
   lockRelease,
+  towerPlace,
+  towerUpgrade,
+  buzzerLock,
+  voiceFight,
+  openTowerUpgrade,
+  openSpit,
+  openJump,
+  openMeleeHit,
+  openRangedShot,
+  openExplosion,
+  openDamage,
+  openDeath,
+  openCoin,
+  openVictory,
+  openUltimate,
+  openPlayfulBgm,
+  openCityBattleBgm,
+  openCarrierBattleBgm,
+  openCosmicBattleBgm,
+  openSciFiBgm,
 ];
 
 export const gameCases = effectComponents

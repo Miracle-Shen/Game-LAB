@@ -19,6 +19,7 @@ import {
   matchGameAudioPoints,
   rankSoundCards,
 } from "./sound-library.js?v=20260826e";
+import { GAME_FILTER_TAGS, rankGameCards } from "./game-library.js?v=20260826a";
 
 const app = document.querySelector("#app");
 const invalidCases = Object.entries(categoryCases).flatMap(([category, cases]) => cases.flatMap((item) => {
@@ -124,8 +125,11 @@ function homeView() {
 
 function caseCard(item) {
   const href = caseHash(item);
+  const gameAttributes = item.tags?.length
+    ? ` data-game-card data-game-id="${item.id}" data-game-tags="${escapeHtml(item.tags.join(" "))}"`
+    : "";
   return `
-    <article class="case-card">
+    <article class="case-card"${gameAttributes}>
       <a href="${href}" class="case-visual" aria-label="查看 ${item.title} 效果">
         ${motionAsset(item.motion)}
         <canvas data-component="${item.component}" data-intensity="${item.motion ? "0.45" : "0.78"}" ${item.motion ? 'data-media-layer="true"' : ""} aria-hidden="true"></canvas>
@@ -141,6 +145,7 @@ function caseCard(item) {
           <h2><a href="${href}">${item.title}</a></h2>
         </div>
         <p class="case-summary">${item.summary}</p>
+        ${item.tags?.length ? `<div class="case-tags">${item.tags.map((tag) => `<small>${tag}</small>`).join("")}</div>` : ""}
         <div class="case-meta">
           <span>${item.sourceName}</span>
           ${item.track ? `<span>${item.track}</span>` : ""}
@@ -149,6 +154,22 @@ function caseCard(item) {
         </div>
       </div>
     </article>`;
+}
+
+function gameBrowserControls() {
+  return `
+    <section class="game-browser-panel" aria-label="游戏特效筛选">
+      <label class="game-search">
+        ${icon("search")}
+        <span class="sr-only">搜索游戏特效</span>
+        <input type="search" data-game-search placeholder="搜索效果、玩法、机制或英文名称" autocomplete="off" />
+      </label>
+      <div class="game-filters" aria-label="游戏特效标签">
+        <button type="button" data-game-filter="all" aria-pressed="true">全部</button>
+        ${GAME_FILTER_TAGS.map((tag) => `<button type="button" data-game-filter="${tag}" aria-pressed="false">${tag}</button>`).join("")}
+      </div>
+      <span class="game-result-count"><b data-game-count>${gameCases.length}</b> EFFECTS</span>
+    </section>`;
 }
 
 function architectureSection() {
@@ -301,8 +322,10 @@ function categoryView(category) {
         </div>
         <a class="scroll-cue" href="#case-grid">EXPLORE <i></i></a>
       </section>
+      ${category === "game" ? gameBrowserControls() : ""}
       <section class="case-grid" id="case-grid" aria-label="${meta.title}案例">
         ${cases.map((item) => caseCard(item)).join("")}
+        ${category === "game" ? '<p class="game-no-results" data-game-empty hidden>没有匹配的游戏特效</p>' : ""}
       </section>
       ${category === "music" ? architectureSection() : ""}
       <footer class="site-footer"><span>FX LAB / ${meta.order}</span><a href="#/">返回总览 ${icon("arrow")}</a></footer>
@@ -360,7 +383,7 @@ function detailView(category, id) {
   const next = cases[(currentIndex + 1) % cases.length];
   const prev = cases[(currentIndex - 1 + cases.length) % cases.length];
   return `
-    <main class="detail-view ${category}-detail ${customDetail ? "has-custom-detail" : ""}" data-detail-component="${item.component}">
+    <main class="detail-view ${category}-detail ${customDetail ? "has-custom-detail" : ""} ${component.controlsMarkup ? "has-custom-controls" : ""}" data-detail-component="${item.component}">
       ${motionAsset(item.motion)}
       <canvas class="detail-canvas" data-component="${item.component}" data-intensity="${item.motion ? "0.55" : "1"}" ${item.motion ? 'data-media-layer="true"' : ""} aria-label="${item.interaction || `${item.title} 动态效果`}"></canvas>
       <div class="detail-shade"></div>
@@ -387,6 +410,7 @@ function detailView(category, id) {
       <div class="effect-controls" aria-label="效果控制">
         <button class="icon-button" type="button" data-action="toggle" aria-label="暂停效果">${icon("pause")}</button>
         <button class="icon-button" type="button" data-action="replay" aria-label="重新播放">${icon("replay")}</button>
+        ${component.controlsMarkup?.({ item, icon }) || ""}
         <label>
           <span>INTENSITY</span>
           <input type="range" min="0.45" max="1.7" step="0.05" value="1" data-action="intensity" />
@@ -559,6 +583,40 @@ function mountSoundLibrary(root) {
   });
 }
 
+function mountGameLibrary(root) {
+  const cards = [...root.querySelectorAll("[data-game-card]")];
+  if (!cards.length) return;
+  const search = root.querySelector("[data-game-search]");
+  const count = root.querySelector("[data-game-count]");
+  const empty = root.querySelector("[data-game-empty]");
+  const filterButtons = [...root.querySelectorAll("[data-game-filter]")];
+  let activeTag = "all";
+
+  const updateCards = () => {
+    const query = search.value.trim();
+    const ranked = new Map(rankGameCards(query, gameCases, { threshold: query ? 0.22 : 0 })
+      .map(({ card, score }, index) => [card.id, { score, index }]));
+    let visibleCount = 0;
+    cards.forEach((card) => {
+      const match = ranked.get(card.dataset.gameId);
+      const tags = card.dataset.gameTags.split(" ");
+      const visible = Boolean(match) && (activeTag === "all" || tags.includes(activeTag));
+      card.hidden = !visible;
+      card.style.order = match?.index ?? gameCases.length;
+      if (visible) visibleCount += 1;
+    });
+    count.textContent = visibleCount;
+    empty.hidden = visibleCount !== 0;
+  };
+
+  search.addEventListener("input", updateCards);
+  filterButtons.forEach((button) => button.addEventListener("click", () => {
+    activeTag = button.dataset.gameFilter;
+    filterButtons.forEach((candidate) => candidate.setAttribute("aria-pressed", String(candidate === button)));
+    updateCards();
+  }));
+}
+
 function bindSoundDetail(root) {
   const audio = root.querySelector("[data-detail-audio]");
   if (!audio) return;
@@ -590,6 +648,41 @@ function bindSoundDetail(root) {
 let motionObserver;
 let lyricFrameId = 0;
 let activeDetailController = null;
+let renderedRoute = null;
+let scrollRestoreTimerId = 0;
+let scrollRestoreVersion = 0;
+let capturedCategoryNavigation = null;
+const categoryScrollPositions = new Map();
+const defaultScrollBehavior = document.documentElement.style.scrollBehavior;
+
+if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+
+function rememberCategoryScroll() {
+  if (renderedRoute?.view !== "category") return;
+  categoryScrollPositions.set(renderedRoute.category, window.scrollY);
+}
+
+function restoreRouteScroll(route) {
+  clearTimeout(scrollRestoreTimerId);
+  const restoreVersion = ++scrollRestoreVersion;
+  const savedPosition = route.view === "category"
+    ? categoryScrollPositions.get(route.category)
+    : undefined;
+  const targetPosition = savedPosition ?? 0;
+  document.documentElement.style.scrollBehavior = "auto";
+  window.scrollTo(0, targetPosition);
+  scrollRestoreTimerId = window.setTimeout(() => {
+    requestAnimationFrame(() => {
+      if (restoreVersion !== scrollRestoreVersion) return;
+      window.scrollTo(0, targetPosition);
+      requestAnimationFrame(() => {
+        if (restoreVersion === scrollRestoreVersion) {
+          document.documentElement.style.scrollBehavior = defaultScrollBehavior;
+        }
+      });
+    });
+  }, 0);
+}
 
 function mountMotion(root) {
   motionObserver?.disconnect();
@@ -665,6 +758,11 @@ function mountLyricTimeline(root) {
 }
 
 function render() {
+  const capturedCurrentNavigation = renderedRoute?.view === "category"
+    && capturedCategoryNavigation?.category === renderedRoute.category
+    && capturedCategoryNavigation.hash === location.hash;
+  if (!capturedCurrentNavigation) rememberCategoryScroll();
+  capturedCategoryNavigation = null;
   activeDetailController?.destroy?.();
   activeDetailController = null;
   stopSoundPreview();
@@ -673,8 +771,6 @@ function render() {
   else if (route.view === "category") app.innerHTML = categoryView(route.category);
   else if (route.view === "detail") app.innerHTML = detailView(route.category, route.id);
   else app.innerHTML = notFoundView();
-  document.documentElement.scrollTop = 0;
-  document.body.scrollTop = 0;
   mountEffects(app);
   mountMotion(app);
   const lyricTimeline = mountLyricTimeline(app);
@@ -687,9 +783,22 @@ function render() {
     }) || null;
   }
   bindControls(lyricTimeline, activeDetailController);
+  mountGameLibrary(app);
   mountSoundLibrary(app);
   bindSoundDetail(app);
+  renderedRoute = route;
+  restoreRouteScroll(route);
 }
+
+app.addEventListener("click", (event) => {
+  const link = event.target.closest?.('a[href^="#/"]');
+  if (!link || renderedRoute?.view !== "category") return;
+  rememberCategoryScroll();
+  capturedCategoryNavigation = {
+    category: renderedRoute.category,
+    hash: link.getAttribute("href"),
+  };
+}, { capture: true });
 
 window.addEventListener("hashchange", render);
 window.addEventListener("DOMContentLoaded", render);
@@ -703,6 +812,10 @@ window.__FX_LAB__ = {
     threshold: DEFAULT_SOUND_MATCH_THRESHOLD,
     search: (query, options) => rankSoundCards(query, soundCases, options),
     match: (points, options) => matchGameAudioPoints(points, soundCases, options),
+  },
+  gameLibrary: {
+    tags: GAME_FILTER_TAGS,
+    search: (query, options) => rankGameCards(query, gameCases, options),
   },
   components: getRegisteredEffectComponents().map(({ id, category, hash }) => ({ id, category, hash })),
   render,

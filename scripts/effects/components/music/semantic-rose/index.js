@@ -1,7 +1,8 @@
 import { defineEffectComponent } from "../../../component-registry.js";
 import { draw, mountKaraoke, renderKaraokeDetail } from "./renderer.js";
 
-const audioUrl = new URL("./assets/on-the-run-excerpt.m4a", import.meta.url).href;
+const originalAudioUrl = new URL("./assets/on-the-run-excerpt.m4a", import.meta.url).href;
+const backingAudioUrl = new URL("./assets/on-the-run-backing.m4a", import.meta.url).href;
 const chartUrl = new URL("./assets/on-the-run.txt", import.meta.url).href;
 
 export default defineEffectComponent({
@@ -22,7 +23,7 @@ export default defineEffectComponent({
     heartMode: false,
     completed: false,
   }),
-  detailMarkup: () => renderKaraokeDetail({ audioUrl }),
+  detailMarkup: () => renderKaraokeDetail({ backingAudioUrl, originalAudioUrl }),
   mountDetail: ({ root, instance }) => mountKaraoke({ root, instance, chartUrl }),
   card: {
     index: "M-01",
@@ -33,11 +34,11 @@ export default defineEffectComponent({
     lyricAuthor: "Joshua Morin",
     lyricWork: "On the Run",
     track: "20 SEC / LIVE MIC",
-    sourceName: "Performous / Loukai / USDX",
+    sourceName: "Performous / Demucs / Loukai / USDX",
     sourceUrl: "https://performous.org/songs",
     license: "CC BY-SA 2.5 · OPEN SOURCE",
     status: "LIVE MICROPHONE",
-    interaction: "选择音高谱或心形模式后开始演唱；唱准时轨迹贴合心形，高低音分别向轮廓两侧偏移。",
-    notes: "歌曲录音、歌词与 UltraStar 音高谱来自 Performous libre song pack；麦克风音高链路参考 Loukai，音符轨与命中反馈参考 UltraStar Deluxe；声音心形为本案例实现。",
+    interaction: "开始演唱使用去人声伴奏并开启麦克风评分；原唱试听保留 Joshua Morin 的演唱，音高谱与心形模式可随时切换。",
+    notes: "歌曲录音、歌词与 UltraStar 音高谱来自 Performous libre song pack；演唱伴奏由 Demucs 从原录音分离；麦克风音高链路参考 Loukai，音符轨与命中反馈参考 UltraStar Deluxe。",
   },
 });

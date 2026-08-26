@@ -8,7 +8,7 @@ export default defineEffectComponent({
     state.custom.lastCombo = now;
   },
   card: {
-    index: "G-08", track: "CASUAL GAME",
+    index: "G-08", track: "CASUAL GAME", tags: ["休闲", "连击", "庆祝"],
     interaction: "连续点击累积 COMBO，达到阈值触发全屏庆典",
     title: "连击庆典", subtitle: "COMBO / CELEBRATION",
     summary: "数字弹性、彩纸、皇冠与屏幕脉冲组成关卡完成和高连击反馈。",

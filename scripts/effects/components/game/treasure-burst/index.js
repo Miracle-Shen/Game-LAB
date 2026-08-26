@@ -6,7 +6,7 @@ export default defineEffectComponent({
   createState: () => ({ openCount: 0, lastOpen: 0 }),
   onPointerDown: ({ state, now }) => { state.custom.openCount += 1; state.custom.lastOpen = now; },
   card: {
-    index: "G-14", track: "CASUAL REWARD",
+    index: "G-14", track: "CASUAL REWARD", tags: ["奖励", "宝箱", "粒子"],
     interaction: "点击宝箱，重播开盖、烟尘、金币与闪光爆发",
     title: "宝箱喷奖", subtitle: "CHEST / REWARD BURST",
     summary: "开盖弹性、暖色闪光、金币喷射和落地烟尘组成高价值奖励的关键瞬间。",

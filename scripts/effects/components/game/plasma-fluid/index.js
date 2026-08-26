@@ -4,7 +4,7 @@ import { draw } from "./renderer.js";
 export default defineEffectComponent({
   id: "plasma-fluid", category: "game", draw,
   card: {
-    index: "G-04", track: "HIGH-TECH",
+    index: "G-04", track: "HIGH-TECH", tags: ["科技", "流体", "拖拽"],
     interaction: "按住并拖动，向场中注入高能等离子",
     title: "等离子流体", subtitle: "FLUID / VELOCITY SPLAT",
     summary: "指针轨迹注入速度和颜色，光带在流场中卷曲、扩散并相互混合。",

@@ -10,7 +10,7 @@ export default defineEffectComponent({
     state.custom.coinCount += 1;
   },
   card: {
-    index: "G-12", track: "CLASSIC GAME",
+    index: "G-12", track: "CLASSIC GAME", tags: ["探索", "移动", "加速"],
     interaction: "移动控制跑道位置，点击触发跳跃和加速反馈",
     title: "跑酷冲刺", subtitle: "RUNNER / SPEED BOOST",
     summary: "透视路面、速度线、金币轨迹和跳跃动作构成跑酷游戏的高速场景。",

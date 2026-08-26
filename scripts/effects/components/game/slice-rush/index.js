@@ -4,7 +4,7 @@ import { draw } from "./renderer.js";
 export default defineEffectComponent({
   id: "slice-rush", category: "game", draw,
   card: {
-    index: "G-07", track: "CASUAL GAME",
+    index: "G-07", track: "CASUAL GAME", tags: ["休闲", "切割", "轨迹"],
     interaction: "快速滑过水果，生成切口、果汁与速度轨迹",
     title: "切割冲刺", subtitle: "SWIPE / JUICE TRAIL",
     summary: "连续滑动把触控路径、命中停顿、切片和果汁飞溅串成爽快反馈。",

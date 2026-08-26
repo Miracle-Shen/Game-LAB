@@ -8,4 +8,6 @@
 
 `on-the-run-excerpt.m4a` is a 20.5-second AAC excerpt transcoded from the OGG recording in that package. The song and chart are licensed under [Creative Commons Attribution-ShareAlike 2.5](https://creativecommons.org/licenses/by-sa/2.5/). The original license text is retained in `ON_THE_RUN_LICENSE.txt`.
 
+`on-the-run-backing.m4a` is a derivative accompaniment made from that excerpt with the `htdemucs` two-stem vocal separation model. It is distributed under the same CC BY-SA 2.5 license. [Demucs](https://github.com/facebookresearch/demucs) is released under the MIT license.
+
 The browser microphone pipeline and normalized autocorrelation pitch detector follow the functional pattern used by [Loukai](https://github.com/monteslu/loukai) (AGPL-3.0). The scrolling target-note lane and pitch-hit feedback reproduce the interaction model used by [Performous](https://github.com/performous/performous) (GPL-2.0-or-later) and [UltraStar Deluxe](https://github.com/UltraStar-Deluxe/USDX) (GPL-2.0).
