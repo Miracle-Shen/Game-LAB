@@ -2,10 +2,10 @@ import { defineEffectComponent } from "../../../component-registry.js";
 import { draw } from "./renderer.js";
 
 const cues = [
-  { words: ["春江", "潮水", "连海平"], label: "TIDE", note: "用声音推开水面" },
-  { words: ["海上", "明月", "共潮生"], label: "MOON", note: "持续演唱点亮月轮" },
-  { words: ["滟滟", "随波", "千万里"], label: "GLIMMER", note: "音量唤醒流光" },
-  { words: ["何处", "春江", "无月明"], label: "HORIZON", note: "音高改变地平线" },
+  { words: ["春江", "潮水", "连海平"], label: "TIDE", note: "壹 / 江潮初醒" },
+  { words: ["海上", "明月", "共潮生"], label: "MOON", note: "贰 / 明月潮生" },
+  { words: ["滟滟", "随波", "千万里"], label: "GLIMMER", note: "叁 / 月路千里" },
+  { words: ["何处", "春江", "无月明"], label: "HORIZON", note: "肆 / 江天一色" },
 ];
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -15,7 +15,7 @@ const renderCue = (cue) => cue.words
 
 function detailMarkup() {
   return `
-    <section class="voice-scene" data-voice-scene aria-label="演唱输入歌词声景">
+    <section class="voice-scene is-gated" data-voice-scene aria-label="演唱输入歌词声景">
       <header class="voice-scene-meta">
         <span>MIC-DRIVEN LYRIC / 12 SEC</span>
         <strong>春江 · 声景</strong>
@@ -34,12 +34,12 @@ function detailMarkup() {
         <small data-voice-prompt>${cues[0].note}</small>
       </div>
       <div class="voice-scene-gate" data-voice-gate>
-        <p>唱出歌词，让声音完成画面</p>
+        <p>一声入江，月随潮生</p>
         <div>
           <button type="button" data-voice-start>开始演唱</button>
           <button type="button" data-voice-demo>无麦克风演示</button>
         </div>
-        <span>LOUDNESS → WORDS / PITCH → SCENE / PHRASE → EFFECT</span>
+        <span>春江潮水连海平 / 海上明月共潮生</span>
       </div>
       <footer class="voice-scene-credit">
         <a href="https://github.com/JMPerez/karaoke" target="_blank" rel="noreferrer">WEB AUDIO / KARAOKE</a>
@@ -138,6 +138,7 @@ function mountDetail({ root, instance }) {
       item.classList.toggle("is-active", index === activeCue);
       item.classList.toggle("is-complete", index < activeCue);
     });
+    stage.dataset.chapter = String(activeCue + 1);
   }
 
   function reset() {
@@ -158,7 +159,7 @@ function mountDetail({ root, instance }) {
     status.textContent = demo ? "DEMO VOICE" : "LISTENING";
     note.textContent = "--";
     meter.style.transform = "scaleX(.02)";
-    gateTitle.textContent = "唱出歌词，让声音完成画面";
+    gateTitle.textContent = "一声入江，月随潮生";
     paintCue();
   }
 
@@ -177,10 +178,11 @@ function mountDetail({ root, instance }) {
     visualState.completed = true;
     visualState.cueProgress = 1;
     stage.classList.add("is-complete");
+    stage.classList.add("is-gated");
     status.textContent = "COMPLETE";
     note.textContent = "04 / 04";
     prompt.textContent = "四句歌词已由你的声音完成";
-    gateTitle.textContent = "声景完成";
+    gateTitle.textContent = "江天一色";
     startButton.textContent = "再次演唱";
     demoButton.textContent = "再次演示";
     gate.hidden = false;
@@ -230,6 +232,8 @@ function mountDetail({ root, instance }) {
       else cueProgress = Math.max(0, cueProgress - delta * 0.035);
       visualState.cueProgress = clamp(cueProgress, 0, 1);
       meter.style.transform = `scaleX(${clamp(visualState.level, 0.02, 1)})`;
+      stage.style.setProperty("--voice-scale", (1 + clamp(visualState.level, 0, 1) * 0.018).toFixed(3));
+      stage.classList.toggle("is-voiced", voiced);
       note.textContent = noteName(pitch);
       status.textContent = voiced ? `SINGING / 0${activeCue + 1}` : "LISTENING";
       paintCue();
@@ -261,6 +265,7 @@ function mountDetail({ root, instance }) {
       }
       reset();
       gate.hidden = true;
+      stage.classList.remove("is-gated");
       running = true;
       paused = false;
       lastFrame = performance.now();
@@ -269,6 +274,7 @@ function mountDetail({ root, instance }) {
       status.textContent = "MIC BLOCKED";
       gateTitle.textContent = "无法访问麦克风，可使用演示模式";
       gate.hidden = false;
+      stage.classList.add("is-gated");
       stopInput();
     } finally {
       startButton.disabled = false;
@@ -291,6 +297,7 @@ function mountDetail({ root, instance }) {
       demo = false;
       reset();
       gate.hidden = false;
+      stage.classList.add("is-gated");
       running = false;
       cancelAnimationFrame(frameId);
       stopInput();

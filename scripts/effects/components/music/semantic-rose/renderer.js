@@ -15,6 +15,11 @@ const PITCH_MAX_MIDI = 70;
 const PITCH_VERTICAL_PADDING = 16;
 const MIN_PITCH_RMS = 0.004;
 const MIN_PITCH_CORRELATION = 0.45;
+const PITCH_FILTER_WINDOW = 3;
+const PITCH_FILTER_RESET_MS = 280;
+const PITCH_OCTAVE_MIN_JUMP = 7;
+const PITCH_OCTAVE_MAX_ERROR = 3;
+const PITCH_MAX_STEP = 1.6;
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
@@ -26,7 +31,7 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
-export function renderKaraokeDetail({ backingAudioUrl, originalAudioUrl }) {
+export function renderKaraokeDetail({ backingAudioUrl, originalAudioUrl, icon }) {
   return `
     <section class="sing-console" data-sing-console aria-label="实时演唱舞台">
       <div class="sing-song-meta">
@@ -59,6 +64,12 @@ export function renderKaraokeDetail({ backingAudioUrl, originalAudioUrl }) {
           <button type="button" data-sing-preview>原唱试听</button>
         </div>
         <span data-sing-gate-status>BACKING TRACK + MICROPHONE</span>
+      </div>
+      <div class="sing-result-actions" data-sing-result-actions hidden>
+        <button type="button" data-sing-export aria-label="保存或分享演唱结果">
+          ${icon("share")}<span data-sing-export-label>保存 / 分享</span>
+        </button>
+        <span data-sing-export-status role="status" aria-live="polite"></span>
       </div>
       <div class="sing-credit">
         <a href="https://performous.org/songs" target="_blank" rel="noreferrer">SONG PACK / PERFORMOUS</a>
@@ -122,6 +133,24 @@ function heartProgressAtTime(chart, time) {
   return clamp((time - chart.timelineStart) / Math.max(chart.timelineDuration, 0.001), 0, 1);
 }
 
+function targetMidiAtTime(chart, time) {
+  let previous = null;
+  let next = null;
+  for (const note of chart.notes) {
+    if (time >= note.start && time <= note.end) return note.midi;
+    if (note.end < time) previous = note;
+    if (note.start > time) {
+      next = note;
+      break;
+    }
+  }
+  if (!previous) return next?.midi ?? null;
+  if (!next) return previous.midi;
+  const gapProgress = clamp((time - previous.end) / Math.max(next.start - previous.end, 0.001), 0, 1);
+  const easedProgress = gapProgress * gapProgress * (3 - 2 * gapProgress);
+  return previous.midi + (next.midi - previous.midi) * easedProgress;
+}
+
 function midiFromFrequency(frequency) {
   return 69 + 12 * Math.log2(frequency / 440);
 }
@@ -131,6 +160,66 @@ function noteName(midi) {
   const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
   const rounded = Math.round(midi);
   return `${names[((rounded % 12) + 12) % 12]}${Math.floor(rounded / 12) - 1}`;
+}
+
+function median(values) {
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2
+    ? sorted[middle]
+    : (sorted[middle - 1] + sorted[middle]) * 0.5;
+}
+
+function foldLikelyOctaveError(midi, reference) {
+  if (!Number.isFinite(reference)) return midi;
+  const jump = midi - reference;
+  if (Math.abs(jump) < PITCH_OCTAVE_MIN_JUMP) return midi;
+  const folded = midi + Math.round((reference - midi) / 12) * 12;
+  return Math.abs(folded - reference) <= PITCH_OCTAVE_MAX_ERROR ? folded : midi;
+}
+
+// Loukai smooths consecutive frequency estimates. This tracker applies the same
+// idea in logarithmic MIDI space, with a median pre-filter for harmonic spikes.
+export function createPitchStabilizer() {
+  let filteredMidi = null;
+  let lastSampleAt = Number.NEGATIVE_INFINITY;
+  const recentMidi = [];
+
+  return {
+    update(rawMidi, confidence, now) {
+      if (!Number.isFinite(rawMidi)) {
+        if (now - lastSampleAt > PITCH_FILTER_RESET_MS) this.reset();
+        return null;
+      }
+
+      const startsSegment = now - lastSampleAt > PITCH_FILTER_RESET_MS;
+      if (startsSegment) {
+        recentMidi.length = 0;
+        filteredMidi = null;
+      }
+
+      const octaveStableMidi = foldLikelyOctaveError(rawMidi, filteredMidi);
+      recentMidi.push(octaveStableMidi);
+      if (recentMidi.length > PITCH_FILTER_WINDOW) recentMidi.shift();
+      const medianMidi = median(recentMidi);
+
+      if (!Number.isFinite(filteredMidi)) {
+        filteredMidi = medianMidi;
+      } else {
+        const delta = medianMidi - filteredMidi;
+        const confidenceWeight = clamp((confidence - MIN_PITCH_CORRELATION) / 0.4, 0, 1);
+        const response = (Math.abs(delta) > 1.25 ? 0.56 : 0.3) * (0.78 + confidenceWeight * 0.22);
+        filteredMidi += clamp(delta * response, -PITCH_MAX_STEP, PITCH_MAX_STEP);
+      }
+      lastSampleAt = now;
+      return filteredMidi;
+    },
+    reset() {
+      recentMidi.length = 0;
+      filteredMidi = null;
+      lastSampleAt = Number.NEGATIVE_INFINITY;
+    },
+  };
 }
 
 // Normalized autocorrelation follows the real-time microphone analysis pattern used by Loukai.
@@ -220,7 +309,14 @@ function buildLyrics(container, lines) {
   container.replaceChildren(fragment);
 }
 
-function resizeCanvas(canvas) {
+function resizeCanvas(canvas, outputSize = null) {
+  if (outputSize) {
+    const width = Math.max(1, Math.round(outputSize.width));
+    const height = Math.max(1, Math.round(outputSize.height));
+    canvas.width = width;
+    canvas.height = height;
+    return { width, height, dpr: 1 };
+  }
   const rect = canvas.getBoundingClientRect();
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const width = Math.max(1, Math.round(rect.width * dpr));
@@ -277,20 +373,36 @@ function drawPitchLane(canvas, chart, time, history, activeNote, accuracy, hasVo
     ctx.strokeStyle = "rgba(103,255,205,.92)";
     ctx.shadowBlur = 12;
     ctx.shadowColor = "rgba(63,255,194,.6)";
-    ctx.beginPath();
-    let previous = null;
+    const segments = [];
+    let segment = [];
     recent.forEach((point) => {
-      if (!point.voiced || !Number.isFinite(point.actualMidi)) {
-        previous = null;
-        return;
+      const previous = segment.at(-1);
+      if (!point.voiced || !Number.isFinite(point.actualMidi) || (previous && point.time - previous.time > PITCH_SAMPLE_GAP)) {
+        if (segment.length) segments.push(segment);
+        segment = [];
       }
-      const x = anchorX + (point.time - time) * pixelsPerSecond;
-      const y = pitchY(point.actualMidi);
-      if (!previous || point.time - previous.time > PITCH_SAMPLE_GAP) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-      previous = point;
+      if (point.voiced && Number.isFinite(point.actualMidi)) segment.push(point);
     });
-    ctx.stroke();
+    if (segment.length) segments.push(segment);
+
+    segments.forEach((points) => {
+      const canvasPoints = points.map((point) => ({
+        x: anchorX + (point.time - time) * pixelsPerSecond,
+        y: pitchY(point.actualMidi),
+      }));
+      ctx.beginPath();
+      ctx.moveTo(canvasPoints[0].x, canvasPoints[0].y);
+      for (let index = 1; index < canvasPoints.length; index += 1) {
+        const previous = canvasPoints[index - 1];
+        const current = canvasPoints[index];
+        const midX = (previous.x + current.x) * 0.5;
+        const midY = (previous.y + current.y) * 0.5;
+        ctx.quadraticCurveTo(previous.x, previous.y, midX, midY);
+      }
+      const last = canvasPoints.at(-1);
+      ctx.lineTo(last.x, last.y);
+      ctx.stroke();
+    });
     ctx.shadowBlur = 0;
   }
 
@@ -383,11 +495,202 @@ function heartGrade(score) {
   if (score >= 90) return "CRYSTAL HEART";
   if (score >= 75) return "RADIANT HEART";
   if (score >= 55) return "WILD HEART";
-  return "FRAGILE HEART";
+  return "NEON HEART";
 }
 
-function drawHeartLane(canvas, chart, history, progress, score, completed, now, activeNote, currentPitch, hasVoice) {
-  const { width, height, dpr } = resizeCanvas(canvas);
+function displayPitchOffset(errorSemitones, pixelsPerSemitone) {
+  // Preserve the direction and relative size of the real pitch error while
+  // compressing extreme misses enough for the result to remain heart-shaped.
+  return Math.tanh(errorSemitones / 2.8) * Math.min(pixelsPerSemitone * 2.7, 42);
+}
+
+function buildActualHeartTrace(history, centerX, centerY, scale, pixelsPerSemitone, completed) {
+  const samples = history
+    .filter((point) => point.voiced && Number.isFinite(point.actualMidi) && Number.isFinite(point.targetMidi))
+    .map((point) => ({
+      progress: clamp(point.progress, 0, 1),
+      error: point.errorSemitones,
+      accuracy: point.accuracy,
+    }));
+  if (!samples.length) return [];
+
+  if (completed) {
+    const seamError = (samples[0].error + samples.at(-1).error) * 0.5;
+    const seamAccuracy = (samples[0].accuracy + samples.at(-1).accuracy) * 0.5;
+    samples.unshift({ progress: 0, error: seamError, accuracy: seamAccuracy });
+    samples.push({ progress: 1, error: seamError, accuracy: seamAccuracy });
+  }
+
+  const points = [];
+  for (let index = 0; index < samples.length - 1; index += 1) {
+    const from = samples[index];
+    const to = samples[index + 1];
+    const steps = Math.max(1, Math.ceil((to.progress - from.progress) / 0.006));
+    for (let step = index ? 1 : 0; step <= steps; step += 1) {
+      const mix = step / steps;
+      const progress = from.progress + (to.progress - from.progress) * mix;
+      const isSilentBridge = to.progress - from.progress > 0.012;
+      const errorMix = isSilentBridge ? mix * mix * (3 - 2 * mix) : mix;
+      const error = from.error + (to.error - from.error) * errorMix;
+      const accuracy = from.accuracy + (to.accuracy - from.accuracy) * errorMix;
+      const point = heartPoint(
+        progress,
+        centerX,
+        centerY,
+        scale,
+        displayPitchOffset(error, pixelsPerSemitone),
+      );
+      points.push({ ...point, progress, accuracy });
+    }
+  }
+  if (samples.length === 1) {
+    const point = heartPoint(
+      samples[0].progress,
+      centerX,
+      centerY,
+      scale,
+      displayPitchOffset(samples[0].error, pixelsPerSemitone),
+    );
+    points.push({ ...point, ...samples[0] });
+  }
+  return points;
+}
+
+function heartBeat(now, quality, completed, musicLevel) {
+  const period = 840 - quality * 90;
+  const phase = (now % period) / period;
+  const firstBeat = Math.exp(-Math.pow((phase - 0.075) / 0.052, 2));
+  const secondBeat = Math.exp(-Math.pow((phase - 0.235) / 0.072, 2)) * 0.56;
+  const pulse = clamp(firstBeat + secondBeat, 0, 1);
+  const audioLift = clamp(musicLevel, 0, 1) * 0.026;
+  const amplitude = (completed ? 0.036 : 0.03) + quality * (completed ? 0.045 : 0.03) + audioLift;
+  return {
+    pulse,
+    scale: 1 + audioLift * 0.4 + pulse * amplitude + (completed ? Math.sin(now * 0.0017) * 0.004 : 0),
+  };
+}
+
+function tracePoints(ctx, points) {
+  if (!points.length) return;
+  ctx.beginPath();
+  points.forEach((point, index) => {
+    if (index) ctx.lineTo(point.x, point.y);
+    else ctx.moveTo(point.x, point.y);
+  });
+}
+
+function drawHeartAtmosphere(ctx, width, height, centerX, centerY, scale, quality, completed, now, beatPulse) {
+  const glow = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, scale * 1.55);
+  glow.addColorStop(0, `rgba(255,46,126,${0.035 + quality * 0.08 + beatPulse * 0.055})`);
+  glow.addColorStop(0.48, `rgba(35,255,205,${quality * 0.028})`);
+  glow.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, width, height);
+
+  const starCount = Math.round(34 + quality * 72);
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  for (let index = 0; index < starCount; index += 1) {
+    const seed = hash(index * 17.17);
+    const angle = hash(index * 9.31) * TAU + now * (index % 2 ? 0.000008 : -0.000006);
+    const distance = scale * (0.32 + hash(index * 4.77) * 1.22);
+    const twinkle = 0.25 + 0.75 * Math.abs(Math.sin(now * 0.0015 + seed * 18));
+    const x = centerX + Math.cos(angle) * distance;
+    const y = centerY + Math.sin(angle) * distance * 0.72;
+    ctx.fillStyle = index % 4 === 0
+      ? `rgba(112,255,218,${twinkle * (0.12 + quality * 0.38)})`
+      : `rgba(255,152,190,${twinkle * (0.1 + quality * 0.3)})`;
+    ctx.beginPath();
+    ctx.arc(x, y, 0.45 + seed * (0.8 + quality * 1.15) + beatPulse * 0.5, 0, TAU);
+    ctx.fill();
+  }
+
+  if (completed && quality >= 0.55) {
+    const rayStrength = (quality - 0.55) / 0.45;
+    ctx.save();
+    ctx.translate(centerX, centerY + scale * 0.04);
+    ctx.rotate(now * 0.000025);
+    for (let index = 0; index < 18; index += 1) {
+      const angle = (index / 18) * TAU;
+      const length = scale * (0.5 + hash(index * 5.12) * 0.7);
+      const ray = ctx.createLinearGradient(0, 0, Math.cos(angle) * length, Math.sin(angle) * length);
+      ray.addColorStop(0, `rgba(255,232,198,${0.08 * rayStrength})`);
+      ray.addColorStop(1, "rgba(255,80,154,0)");
+      ctx.strokeStyle = ray;
+      ctx.lineWidth = 0.7 + rayStrength * 1.1;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(angle) * scale * 0.17, Math.sin(angle) * scale * 0.17);
+      ctx.lineTo(Math.cos(angle) * length, Math.sin(angle) * length);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+function drawActualHeart(ctx, points, quality, completed, now) {
+  if (points.length < 2) return;
+
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.globalCompositeOperation = "lighter";
+  ctx.strokeStyle = `rgba(255,54,135,${0.2 + quality * 0.18})`;
+  ctx.lineWidth = 13 + quality * 8;
+  ctx.shadowBlur = 18 + quality * 24;
+  ctx.shadowColor = quality > 0.72 ? "rgba(84,255,211,.82)" : "rgba(255,62,139,.78)";
+  tracePoints(ctx, points);
+  ctx.stroke();
+
+  for (let index = 1; index < points.length; index += 1) {
+    const from = points[index - 1];
+    const to = points[index];
+    const accuracy = (from.accuracy + to.accuracy) * 0.5;
+    const red = Math.round(255 - accuracy * 142);
+    const green = Math.round(92 + accuracy * 163);
+    const blue = Math.round(145 + accuracy * 68);
+    ctx.strokeStyle = `rgba(${red},${green},${blue},.98)`;
+    ctx.lineWidth = 2.8 + accuracy * 3.4;
+    ctx.shadowBlur = 7 + accuracy * 20;
+    ctx.shadowColor = `rgba(${red},${green},${blue},.9)`;
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+    ctx.stroke();
+  }
+
+  const cometCount = completed ? Math.round(2 + quality * 6) : quality > 0.72 ? 2 : 1;
+  for (let comet = 0; comet < cometCount; comet += 1) {
+    const cometProgress = fract(now * (0.00008 + quality * 0.000045) + comet / cometCount);
+    const pointIndex = Math.min(points.length - 1, Math.floor(cometProgress * points.length));
+    const point = points[pointIndex];
+    const halo = 5 + quality * 7;
+    const flare = ctx.createRadialGradient(point.x, point.y, 0, point.x, point.y, halo);
+    flare.addColorStop(0, "rgba(255,255,239,.98)");
+    flare.addColorStop(0.22, `rgba(105,255,216,${0.7 + quality * 0.25})`);
+    flare.addColorStop(1, "rgba(105,255,216,0)");
+    ctx.fillStyle = flare;
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, halo, 0, TAU);
+    ctx.fill();
+  }
+  if (!completed) {
+    const head = points.at(-1);
+    const headRadius = 5.5 + quality * 3.5;
+    const headGlow = ctx.createRadialGradient(head.x, head.y, 0, head.x, head.y, headRadius * 2.2);
+    headGlow.addColorStop(0, "rgba(255,255,244,1)");
+    headGlow.addColorStop(0.24, "rgba(105,255,216,.96)");
+    headGlow.addColorStop(1, "rgba(255,73,147,0)");
+    ctx.fillStyle = headGlow;
+    ctx.beginPath();
+    ctx.arc(head.x, head.y, headRadius * 2.2, 0, TAU);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawHeartLane(canvas, chart, history, progress, score, completed, now, activeNote, currentPitch, hasVoice, outputSize = null, musicLevel = 0) {
+  const { width, height, dpr } = resizeCanvas(canvas, outputSize);
   const ctx = canvas.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
@@ -398,42 +701,48 @@ function drawHeartLane(canvas, chart, history, progress, score, completed, now, 
   const pixelsPerSemitone = clamp(pitchPixelsPerSemitone(height), 8, 16);
   const inTuneOffset = pixelsPerSemitone * IN_TUNE_SEMITONES;
   const quality = Number.isFinite(score) ? clamp(score / 100, 0, 1) : completed ? 0.82 : 0;
-  const breathe = 1 + Math.sin(now * 0.0022) * (completed ? 0.018 : 0.008);
+  const beat = heartBeat(now, quality, completed, musicLevel);
+  const heartScale = scale * beat.scale;
+
+  ctx.fillStyle = "#020205";
+  ctx.fillRect(0, 0, width, height);
+  drawHeartAtmosphere(ctx, width, height, centerX, centerY, heartScale, quality, completed, now, beat.pulse);
 
   if (completed) {
     const echoPhase = (now * 0.00022) % 1;
     for (let ring = 0; ring < 3; ring += 1) {
       const phase = (echoPhase + ring / 3) % 1;
       ctx.save();
+      ctx.lineJoin = "round";
       ctx.lineWidth = 1.5 + (1 - phase) * 2;
       ctx.strokeStyle = `rgba(${ring === 1 ? "103,255,205" : "255,91,151"},${(1 - phase) * (0.2 + quality * 0.24)})`;
       ctx.shadowBlur = 18;
       ctx.shadowColor = ring === 1 ? "rgba(103,255,205,.46)" : "rgba(255,91,151,.48)";
-      traceHeart(ctx, centerX, centerY, scale * (breathe + phase * 0.14));
+      traceHeart(ctx, centerX, centerY, heartScale * (1 + phase * 0.14));
       ctx.stroke();
       ctx.restore();
     }
 
-    const fill = ctx.createRadialGradient(centerX, centerY * 0.94, 0, centerX, centerY, scale * 1.18);
+    const fill = ctx.createRadialGradient(centerX, centerY * 0.94, 0, centerX, centerY, heartScale * 1.18);
     fill.addColorStop(0, `rgba(255,244,215,${0.14 + quality * 0.24})`);
     fill.addColorStop(0.34, `rgba(255,93,151,${0.11 + quality * 0.2})`);
     fill.addColorStop(1, "rgba(76,18,52,0)");
-    traceHeart(ctx, centerX, centerY, scale * breathe);
+    traceHeart(ctx, centerX, centerY, heartScale);
     ctx.fillStyle = fill;
     ctx.fill();
 
     ctx.save();
-    traceHeart(ctx, centerX, centerY, scale * breathe);
+    traceHeart(ctx, centerX, centerY, heartScale);
     ctx.clip();
     ctx.globalCompositeOperation = "lighter";
     for (let i = 0; i < 22; i += 1) {
-      const point = heartPoint((i + 0.5) / 22, centerX, centerY, scale * breathe);
+      const point = heartPoint((i + 0.5) / 22, centerX, centerY, heartScale);
       ctx.strokeStyle = i % 3 === 0
         ? `rgba(112,255,216,${0.035 + quality * 0.055})`
         : `rgba(255,132,176,${0.035 + quality * 0.06})`;
       ctx.lineWidth = 0.8;
       ctx.beginPath();
-      ctx.moveTo(centerX, centerY + scale * 0.06);
+      ctx.moveTo(centerX, centerY + heartScale * 0.06);
       ctx.lineTo(point.x, point.y);
       ctx.stroke();
     }
@@ -442,77 +751,58 @@ function drawHeartLane(canvas, chart, history, progress, score, completed, now, 
 
   ctx.save();
   ctx.lineCap = "round";
+  ctx.lineJoin = "round";
   ctx.lineWidth = Math.max(10, inTuneOffset * 2);
-  ctx.strokeStyle = "rgba(255,181,112,.1)";
-  traceHeart(ctx, centerX, centerY, scale);
+  ctx.strokeStyle = hasVoice && !completed ? "rgba(255,181,112,.08)" : "rgba(255,181,112,.035)";
+  traceHeart(ctx, centerX, centerY, heartScale);
   ctx.stroke();
-  ctx.lineWidth = 1.7;
-  ctx.strokeStyle = "rgba(255,235,210,.42)";
-  ctx.shadowBlur = 8;
-  ctx.shadowColor = "rgba(255,122,166,.42)";
-  traceHeart(ctx, centerX, centerY, scale);
+  ctx.lineWidth = hasVoice && !completed ? 2.1 : 1.1;
+  ctx.strokeStyle = hasVoice && !completed ? "rgba(255,235,210,.5)" : "rgba(255,235,210,.13)";
+  ctx.shadowBlur = hasVoice && !completed ? 10 : 0;
+  ctx.shadowColor = "rgba(255,122,166,.36)";
+  traceHeart(ctx, centerX, centerY, heartScale);
   ctx.stroke();
   ctx.restore();
 
   ctx.save();
   ctx.lineCap = "round";
-  ctx.lineWidth = 1.8;
-  ctx.strokeStyle = "rgba(103,255,205,.58)";
-  ctx.shadowBlur = 7;
-  ctx.shadowColor = "rgba(63,255,194,.38)";
-  traceHeart(ctx, centerX, centerY, scale, 1, -inTuneOffset);
+  ctx.lineJoin = "round";
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = hasVoice && !completed ? "rgba(103,255,205,.1)" : "rgba(103,255,205,.045)";
+  ctx.shadowBlur = hasVoice && !completed ? 2 : 0;
+  ctx.shadowColor = "rgba(63,255,194,.12)";
+  traceHeart(ctx, centerX, centerY, heartScale, 1, -inTuneOffset);
   ctx.stroke();
-  traceHeart(ctx, centerX, centerY, scale, 1, inTuneOffset);
+  traceHeart(ctx, centerX, centerY, heartScale, 1, inTuneOffset);
   ctx.stroke();
   ctx.restore();
 
   chart.notes.forEach((note) => {
     const isActive = note === activeNote && hasVoice;
     const isPast = note.heartEnd < progress;
+    const standardLineActive = hasVoice && !completed;
+    const liveAccuracy = clamp(history.at(-1)?.accuracy || 0, 0, 1);
     ctx.save();
     ctx.lineCap = "round";
-    ctx.lineWidth = isActive ? 8 : note.golden ? 5 : 3.5;
+    ctx.lineJoin = "round";
+    ctx.lineWidth = isActive ? 6 + liveAccuracy * 3 : standardLineActive ? 2.5 : 1.3;
     ctx.strokeStyle = isActive
-      ? "rgba(255,215,133,.98)"
-      : isPast ? "rgba(255,236,218,.3)" : note.golden ? "rgba(255,196,92,.7)" : "rgba(255,255,255,.46)";
-    ctx.shadowBlur = isActive ? 24 : note.golden ? 10 : 4;
-    ctx.shadowColor = isActive ? "rgba(255,92,151,.9)" : "rgba(255,184,119,.35)";
-    traceHeartRange(ctx, centerX, centerY, scale, note.heartStart, note.heartEnd);
+      ? `rgba(255,215,133,${0.82 + liveAccuracy * 0.18})`
+      : completed ? "rgba(255,236,218,.08)"
+        : standardLineActive
+          ? isPast ? "rgba(255,236,218,.12)" : note.golden ? "rgba(255,196,92,.3)" : "rgba(255,255,255,.2)"
+          : "rgba(255,255,255,.08)";
+    ctx.shadowBlur = isActive ? 14 + liveAccuracy * 14 : 0;
+    ctx.shadowColor = isActive ? "rgba(255,92,151,.9)" : "transparent";
+    traceHeartRange(ctx, centerX, centerY, heartScale, note.heartStart, note.heartEnd);
     ctx.stroke();
     ctx.restore();
   });
 
-  if (history.length) {
-    ctx.save();
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    for (let i = 1; i < history.length; i += 1) {
-      const previous = history[i - 1];
-      const current = history[i];
-      const hasTargets = previous.noteId !== null && current.noteId !== null;
-      if (!hasTargets || !previous.voiced || !current.voiced || current.time - previous.time > PITCH_SAMPLE_GAP) continue;
-      const from = heartPoint(previous.progress, centerX, centerY, scale, previous.errorSemitones * pixelsPerSemitone);
-      const to = heartPoint(current.progress, centerX, centerY, scale, current.errorSemitones * pixelsPerSemitone);
-      const accuracy = (previous.accuracy + current.accuracy) * 0.5;
-      const red = Math.round(255 - accuracy * 112);
-      const green = Math.round(104 + accuracy * 151);
-      const blue = Math.round(126 + accuracy * 87);
-      ctx.strokeStyle = `rgba(${red},${green},${blue},${0.18 + accuracy * 0.16})`;
-      ctx.lineWidth = 8 + accuracy * 6;
-      ctx.shadowBlur = 8 + accuracy * 18;
-      ctx.shadowColor = `rgba(${red},${green},${blue},.74)`;
-      ctx.beginPath();
-      ctx.moveTo(from.x, from.y);
-      ctx.lineTo(to.x, to.y);
-      ctx.stroke();
-      ctx.strokeStyle = `rgba(${red},${green},${blue},${0.78 + accuracy * 0.22})`;
-      ctx.lineWidth = 2 + accuracy * 3.8;
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
+  const actualTrace = buildActualHeartTrace(history, centerX, centerY, heartScale, pixelsPerSemitone, completed);
+  drawActualHeart(ctx, actualTrace, quality, completed, now);
 
-  const cursorPoint = heartPoint(clamp(progress, 0, 1), centerX, centerY, scale);
+  const cursorPoint = heartPoint(clamp(progress, 0, 1), centerX, centerY, heartScale);
   if (!completed) {
     ctx.fillStyle = hasVoice ? "rgba(255,206,125,.2)" : "rgba(255,255,255,.05)";
     ctx.beginPath();
@@ -528,7 +818,13 @@ function drawHeartLane(canvas, chart, history, progress, score, completed, now, 
     if (activeNote) {
       const latest = history.at(-1);
       if (latest?.voiced && latest.noteId === activeNote.id) {
-        const livePoint = heartPoint(progress, centerX, centerY, scale, latest.errorSemitones * pixelsPerSemitone);
+        const livePoint = heartPoint(
+          progress,
+          centerX,
+          centerY,
+          heartScale,
+          displayPitchOffset(latest.errorSemitones, pixelsPerSemitone),
+        );
         ctx.fillStyle = latest.accuracy > 0.82 ? "#7dffd8" : "#ff9f78";
         ctx.shadowBlur = 18;
         ctx.shadowColor = latest.accuracy > 0.82 ? "rgba(103,255,205,.85)" : "rgba(255,112,131,.78)";
@@ -554,13 +850,13 @@ function drawHeartLane(canvas, chart, history, progress, score, completed, now, 
 
   if (completed) {
     const corePulse = 0.78 + Math.sin(now * 0.004) * 0.16;
-    const core = ctx.createRadialGradient(centerX, centerY + scale * 0.02, 0, centerX, centerY + scale * 0.02, scale * 0.32);
+    const core = ctx.createRadialGradient(centerX, centerY + heartScale * 0.02, 0, centerX, centerY + heartScale * 0.02, heartScale * 0.32);
     core.addColorStop(0, `rgba(255,251,226,${0.42 * corePulse})`);
     core.addColorStop(0.18, `rgba(255,103,166,${0.26 * corePulse})`);
     core.addColorStop(1, "rgba(255,65,139,0)");
     ctx.fillStyle = core;
     ctx.beginPath();
-    ctx.arc(centerX, centerY + scale * 0.02, scale * 0.32, 0, Math.PI * 2);
+    ctx.arc(centerX, centerY + heartScale * 0.02, heartScale * 0.32, 0, Math.PI * 2);
     ctx.fill();
 
     const particles = Math.round(30 + quality * 58);
@@ -568,7 +864,7 @@ function drawHeartLane(canvas, chart, history, progress, score, completed, now, 
     ctx.globalCompositeOperation = "lighter";
     for (let i = 0; i < particles; i += 1) {
       const particleProgress = (i / particles + now * (0.000012 + (i % 3) * 0.000004)) % 1;
-      const point = heartPoint(particleProgress, centerX, centerY, scale * breathe, Math.sin(now * 0.002 + i) * 5);
+      const point = heartPoint(particleProgress, centerX, centerY, heartScale, Math.sin(now * 0.002 + i) * 5);
       const alpha = 0.28 + quality * 0.68;
       ctx.fillStyle = i % 3 === 0 ? `rgba(255,220,151,${alpha})` : `rgba(111,255,211,${alpha})`;
       ctx.beginPath();
@@ -577,7 +873,7 @@ function drawHeartLane(canvas, chart, history, progress, score, completed, now, 
     }
 
     [0.08, 0.28, 0.52, 0.76].forEach((pointProgress, index) => {
-      const point = heartPoint(pointProgress, centerX, centerY, scale * breathe);
+      const point = heartPoint(pointProgress, centerX, centerY, heartScale);
       const flare = 5 + quality * 8 + Math.sin(now * 0.004 + index) * 2;
       ctx.strokeStyle = `rgba(255,244,202,${0.36 + quality * 0.38})`;
       ctx.lineWidth = 1;
@@ -590,16 +886,62 @@ function drawHeartLane(canvas, chart, history, progress, score, completed, now, 
     });
     ctx.restore();
 
+    if (quality >= 0.75) {
+      const crownStrength = (quality - 0.75) / 0.25;
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      for (let index = 0; index < 8; index += 1) {
+        const pointProgress = fract(now * 0.000035 + index / 8);
+        const point = heartPoint(pointProgress, centerX, centerY, heartScale, Math.sin(now * 0.0018 + index) * 8);
+        const flare = 8 + crownStrength * 14 + Math.sin(now * 0.005 + index) * 3;
+        ctx.strokeStyle = `rgba(255,247,213,${0.36 + crownStrength * 0.52})`;
+        ctx.lineWidth = 1 + crownStrength;
+        ctx.beginPath();
+        ctx.moveTo(point.x - flare, point.y);
+        ctx.lineTo(point.x + flare, point.y);
+        ctx.moveTo(point.x, point.y - flare);
+        ctx.lineTo(point.x, point.y + flare);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
     ctx.fillStyle = "rgba(255,255,255,.88)";
     ctx.font = "700 12px Arial";
     ctx.textAlign = "center";
-    ctx.fillText(heartGrade(score), centerX, centerY + scale * 0.15);
+    ctx.fillText(heartGrade(score), centerX, centerY + heartScale * 0.15);
     if (Number.isFinite(score)) {
       ctx.fillStyle = "rgba(255,255,255,.48)";
       ctx.font = "700 9px Arial";
-      ctx.fillText(`${score} / 100`, centerX, centerY + scale * 0.15 + 18);
+      ctx.fillText(`${score} / 100`, centerX, centerY + heartScale * 0.15 + 18);
     }
   }
+}
+
+function drawHeartPoster(canvas, chart, history, score) {
+  const width = 1080;
+  const height = 1440;
+  drawHeartLane(canvas, chart, history, 1, score, true, 6840, null, 0, false, { width, height });
+}
+
+function canvasToPng(canvas) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error("Unable to export canvas."));
+    }, "image/png");
+  });
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export function mountKaraoke({ root, instance, chartUrl }) {
@@ -618,6 +960,10 @@ export function mountKaraoke({ root, instance, chartUrl }) {
   const gateStatus = stage.querySelector("[data-sing-gate-status]");
   const startButton = stage.querySelector("[data-sing-start]");
   const previewButton = stage.querySelector("[data-sing-preview]");
+  const resultActions = stage.querySelector("[data-sing-result-actions]");
+  const exportButton = stage.querySelector("[data-sing-export]");
+  const exportLabel = stage.querySelector("[data-sing-export-label]");
+  const exportStatus = stage.querySelector("[data-sing-export-status]");
   const modeButtons = [...stage.querySelectorAll("[data-sing-mode]")];
   let visualState = instance.interaction.custom;
 
@@ -647,10 +993,13 @@ export function mountKaraoke({ root, instance, chartUrl }) {
   let currentPitchMidi = 0;
   let heartProgress = 0;
   let smoothedPitchError = 0;
-  let lastErrorNoteId = null;
   let lastVoicedSampleTime = Number.NEGATIVE_INFINITY;
   const pitchErrorWindow = [];
+  const pitchStabilizer = createPitchStabilizer();
   const performanceHistory = [];
+  let resultFile = null;
+  let resultFilePromise = null;
+  let exportGeneration = 0;
 
   fetch(chartUrl)
     .then((response) => response.text())
@@ -721,10 +1070,10 @@ export function mountKaraoke({ root, instance, chartUrl }) {
     guideNote = null;
     performanceHistory.length = 0;
     pitchErrorWindow.length = 0;
+    pitchStabilizer.reset();
     currentPitchMidi = 0;
     heartProgress = 0;
     smoothedPitchError = 0;
-    lastErrorNoteId = null;
     lastVoicedSampleTime = Number.NEGATIVE_INFINITY;
     completed = false;
     stage.classList.remove("is-complete");
@@ -738,6 +1087,13 @@ export function mountKaraoke({ root, instance, chartUrl }) {
     visualState.voiced = false;
     visualState.progress = 0;
     visualState.completed = false;
+    resultFile = null;
+    resultFilePromise = null;
+    exportGeneration += 1;
+    resultActions.hidden = true;
+    exportButton.disabled = false;
+    exportLabel.textContent = "保存 / 分享";
+    exportStatus.textContent = "";
   }
 
   function performanceScore() {
@@ -757,6 +1113,8 @@ export function mountKaraoke({ root, instance, chartUrl }) {
         activeNote,
         currentPitchMidi,
         visualState.voiced,
+        null,
+        visualState.musicLevel,
       );
     } else {
       drawPitchLane(
@@ -780,10 +1138,74 @@ export function mountKaraoke({ root, instance, chartUrl }) {
     });
     if (completed) {
       gate.hidden = mode === "heart";
+      resultActions.hidden = mode !== "heart";
       stateElement.textContent = "COMPLETE";
       if (mode === "heart") beginLoop();
     }
     paintLane(performance.now());
+  }
+
+  function prepareResultFile() {
+    if (resultFile) return Promise.resolve(resultFile);
+    if (resultFilePromise) return resultFilePromise;
+
+    exportButton.disabled = true;
+    exportLabel.textContent = "生成中...";
+    const generation = exportGeneration;
+    const poster = document.createElement("canvas");
+    drawHeartPoster(poster, chart, performanceHistory, performanceScore());
+    resultFilePromise = canvasToPng(poster)
+      .then((blob) => {
+        if (generation !== exportGeneration) return null;
+        resultFile = new File([blob], "fx-lab-heart.png", { type: "image/png" });
+        exportButton.disabled = false;
+        exportLabel.textContent = "保存 / 分享";
+        return resultFile;
+      })
+      .catch((error) => {
+        if (generation !== exportGeneration) return null;
+        resultFilePromise = null;
+        exportButton.disabled = false;
+        exportLabel.textContent = "重新生成";
+        exportStatus.textContent = "图片生成失败";
+        throw error;
+      });
+    return resultFilePromise;
+  }
+
+  async function shareResult() {
+    if (!resultFile) {
+      try {
+        await prepareResultFile();
+        exportStatus.textContent = "图片已生成，请再次点击";
+      } catch {
+        // prepareResultFile reports the visible error state.
+      }
+      return;
+    }
+    exportButton.disabled = true;
+    exportStatus.textContent = "";
+    try {
+      const shareData = {
+        files: [resultFile],
+        title: "On the Run · Heart Trace",
+        text: "我的演唱心形轨迹",
+      };
+      if (navigator.share && navigator.canShare?.({ files: shareData.files })) {
+        await navigator.share(shareData);
+        exportStatus.textContent = "已打开系统分享";
+      } else {
+        downloadBlob(resultFile, resultFile.name);
+        exportStatus.textContent = "图片已下载";
+      }
+    } catch (error) {
+      if (error?.name !== "AbortError") {
+        downloadBlob(resultFile, resultFile.name);
+        exportStatus.textContent = "分享不可用，图片已下载";
+      }
+    } finally {
+      exportButton.disabled = false;
+    }
   }
 
   async function start(withMicrophone) {
@@ -842,6 +1264,7 @@ export function mountKaraoke({ root, instance, chartUrl }) {
     const time = audio.currentTime;
     activeNote = chart.notes.find((note) => time >= note.start && time <= note.end) || null;
     guideNote = activeNote || chart.notes.find((note) => note.start > time) || null;
+    const traceTargetMidi = targetMidiAtTime(chart, time);
     heartProgress = heartProgressAtTime(chart, time);
     let pitchMidi = currentPitchMidi;
     let level = 0;
@@ -863,10 +1286,11 @@ export function mountKaraoke({ root, instance, chartUrl }) {
       visualState.voiced = Boolean(detected.frequency);
       if (detected.frequency) {
         const rawMidi = midiFromFrequency(detected.frequency);
-        pitchMidi = rawMidi;
+        pitchMidi = pitchStabilizer.update(rawMidi, detected.confidence, now);
         currentPitchMidi = pitchMidi;
         visualState.pitch = pitchMidi;
       } else {
+        pitchStabilizer.update(null, detected.confidence, now);
         pitchMidi = 0;
         currentPitchMidi = 0;
       }
@@ -876,6 +1300,7 @@ export function mountKaraoke({ root, instance, chartUrl }) {
         console.info("[semantic-rose:mic-pitch]", {
           timeSeconds: Number(time.toFixed(3)),
           frequencyHz: detected.frequency ? Number(detected.frequency.toFixed(2)) : null,
+          rawMidi: detected.frequency ? Number(midiFromFrequency(detected.frequency).toFixed(2)) : null,
           microphoneMidi: pitchMidi ? Number(pitchMidi.toFixed(2)) : null,
           microphoneNote: pitchMidi ? noteName(pitchMidi) : null,
           targetMidi,
@@ -907,35 +1332,34 @@ export function mountKaraoke({ root, instance, chartUrl }) {
       let errorSemitones = 0;
       if (activeNote) {
         eligibleSamples += 1;
-        if (voiced) {
-          accuracyTotal += accuracy;
-          const rawError = clamp(pitchMidi - activeNote.midi, -MAX_PITCH_ERROR, MAX_PITCH_ERROR);
-          const startsSegment = lastErrorNoteId !== activeNote.id || time - lastVoicedSampleTime > PITCH_SAMPLE_GAP;
-          if (startsSegment) {
-            pitchErrorWindow.length = 0;
-            smoothedPitchError = rawError;
-          }
-          pitchErrorWindow.push(rawError);
-          if (pitchErrorWindow.length > 3) pitchErrorWindow.shift();
-          const sortedErrors = [...pitchErrorWindow].sort((left, right) => left - right);
-          const medianError = sortedErrors[Math.floor(sortedErrors.length / 2)];
-          smoothedPitchError += (medianError - smoothedPitchError) * 0.45;
-          errorSemitones = smoothedPitchError;
-          lastErrorNoteId = activeNote.id;
-          lastVoicedSampleTime = time;
-        }
-      } else {
-        pitchErrorWindow.length = 0;
-        lastErrorNoteId = null;
+        if (voiced) accuracyTotal += accuracy;
       }
+      if (voiced && Number.isFinite(traceTargetMidi)) {
+        const rawError = clamp(pitchMidi - traceTargetMidi, -MAX_PITCH_ERROR, MAX_PITCH_ERROR);
+        const startsSegment = time - lastVoicedSampleTime > PITCH_SAMPLE_GAP * 2.5;
+        if (startsSegment) {
+          pitchErrorWindow.length = 0;
+          smoothedPitchError = rawError;
+        }
+        pitchErrorWindow.push(rawError);
+        if (pitchErrorWindow.length > 3) pitchErrorWindow.shift();
+        const sortedErrors = [...pitchErrorWindow].sort((left, right) => left - right);
+        const medianError = sortedErrors[Math.floor(sortedErrors.length / 2)];
+        smoothedPitchError += (medianError - smoothedPitchError) * 0.45;
+        errorSemitones = smoothedPitchError;
+        lastVoicedSampleTime = time;
+      }
+      const traceAccuracy = Number.isFinite(traceTargetMidi) && voiced
+        ? Math.exp(-Math.pow(pitchMidi - traceTargetMidi, 2) / 2.4)
+        : 0;
       performanceHistory.push({
         time,
         progress: heartProgress,
         noteId: activeNote?.id ?? null,
-        targetMidi: activeNote?.midi ?? null,
+        targetMidi: traceTargetMidi,
         actualMidi: voiced ? pitchMidi : null,
         errorSemitones,
-        accuracy,
+        accuracy: activeNote ? accuracy : traceAccuracy,
         voiced,
       });
     }
@@ -990,11 +1414,14 @@ export function mountKaraoke({ root, instance, chartUrl }) {
     startButton.textContent = "再唱一次";
     startButton.disabled = false;
     previewButton.disabled = false;
+    resultActions.hidden = mode !== "heart";
+    prepareResultFile().catch(() => {});
     if (mode === "heart") beginLoop();
   };
 
   startButton.addEventListener("click", onStart);
   previewButton.addEventListener("click", onPreview);
+  exportButton.addEventListener("click", shareResult);
   modeButtons.forEach((button) => button.addEventListener("click", onModeChange));
   audio.addEventListener("ended", onEnded);
 
@@ -1033,6 +1460,7 @@ export function mountKaraoke({ root, instance, chartUrl }) {
       audioContext?.close().catch(() => {});
       startButton.removeEventListener("click", onStart);
       previewButton.removeEventListener("click", onPreview);
+      exportButton.removeEventListener("click", shareResult);
       modeButtons.forEach((button) => button.removeEventListener("click", onModeChange));
       audio.removeEventListener("ended", onEnded);
     },
@@ -1080,6 +1508,14 @@ export function draw(ctx, w, h, t, intensity, state) {
   const energy = clamp(0.18 + music * 1.15 + mic * 0.9 + pulse * 0.7, 0.18, 1.8) * intensity;
   const cx = w * (w < 720 ? 0.5 : 0.48);
   const cy = h * 0.46;
+
+  if (live.heartMode) {
+    ctx.fillStyle = "#010103";
+    ctx.fillRect(0, 0, w, h);
+    live.hitPulse = pulse * 0.9;
+    live.micLevel = mic * 0.96;
+    return;
+  }
 
   ctx.fillStyle = "#030305";
   ctx.fillRect(0, 0, w, h);

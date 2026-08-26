@@ -48,6 +48,7 @@ function icon(name) {
     close: '<path d="m6 6 12 12M18 6 6 18"/>',
     search: '<circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/>',
     download: '<path d="M12 3v12m0 0 5-5m-5 5-5-5M5 20h14"/>',
+    share: '<circle cx="18" cy="5" r="2"/><circle cx="6" cy="12" r="2"/><circle cx="18" cy="19" r="2"/><path d="m8 11 8-5M8 13l8 5"/>',
   };
   return `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${paths[name]}</svg>`;
 }
@@ -56,7 +57,7 @@ function header(active = "") {
   return `
     <header class="site-header">
       <a class="brand" href="#/" aria-label="返回首页">
-        <span>FX</span><i></i><span>LAB</span>
+        <span>FX</span><i aria-hidden="true"></i><span>LAB</span><b>HOME</b>
       </a>
       <nav aria-label="主导航">
         ${tabs.map((tab) => `<a href="#/${tab.id}" ${active === tab.id ? 'aria-current="page"' : ""}>${tab.title}</a>`).join("")}
@@ -116,6 +117,7 @@ function homeView() {
               <small>${tab.eyebrow}</small>
               <strong>${tab.title}</strong>
               <em>${tab.subtitle}</em>
+              ${tab.id === "game" ? `<span class="portal-scope"><b>${gameCases.length}</b> 个可交互玩法 · 战斗 / 策略 / 休闲 / 探索 / 节奏 / 奖励</span>` : ""}
               <span class="circle-arrow">${icon("arrow")}</span>
             </span>
           </a>`).join("")}
@@ -145,6 +147,7 @@ function caseCard(item) {
           <h2><a href="${href}">${item.title}</a></h2>
         </div>
         <p class="case-summary">${item.summary}</p>
+        ${item.interaction ? `<p class="case-play"><b>玩法</b>${item.interaction}</p>` : ""}
         ${item.tags?.length ? `<div class="case-tags">${item.tags.map((tag) => `<small>${tag}</small>`).join("")}</div>` : ""}
         <div class="case-meta">
           <span>${item.sourceName}</span>
@@ -396,6 +399,7 @@ function detailView(category, id) {
         <section class="detail-copy">
           <p>${item.status} · ${item.license}</p>
           <h1>${item.title}</h1>
+          ${item.interaction ? `<small class="detail-play">${item.interaction}</small>` : ""}
           ${item.lyric && !item.lyrics ? `<blockquote>${item.lyric}</blockquote>` : ""}
           <span>${item.summary}</span>
         </section>
