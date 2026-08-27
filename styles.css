@@ -1716,6 +1716,49 @@ svg {
   accent-color: var(--white);
 }
 
+.sing-session-chooser {
+  position: absolute;
+  top: 56px;
+  right: 0;
+  display: grid;
+  min-width: 126px;
+  height: 46px;
+  align-content: center;
+  gap: 3px;
+  padding: 0 15px;
+  color: var(--white);
+  background: rgba(0, 0, 0, 0.42);
+  border: 1px solid rgba(240, 240, 250, 0.34);
+  border-radius: 5px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sing-session-chooser span {
+  color: rgba(240, 240, 250, 0.52);
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.sing-session-chooser strong {
+  font-size: 11px;
+  letter-spacing: 0;
+}
+
+.sing-session-chooser:hover,
+.sing-session-chooser:focus-visible,
+.sing-session-chooser[aria-expanded="true"] {
+  color: #09090b;
+  background: #f0f0fa;
+  border-color: #f0f0fa;
+}
+
+.sing-session-chooser:hover span,
+.sing-session-chooser:focus-visible span,
+.sing-session-chooser[aria-expanded="true"] span {
+  color: rgba(9, 9, 11, 0.58);
+}
+
 .effect-controls .effect-select {
   padding-right: 10px;
 }
@@ -2173,19 +2216,21 @@ svg {
   min-width: 126px;
   min-height: 46px;
   padding: 0 22px;
-  color: #050506;
-  background: #f0f0fa;
-  border: 1px solid #f0f0fa;
+  color: #f0f0fa;
+  background: rgba(240, 240, 250, 0.08);
+  border: 1px solid rgba(240, 240, 250, 0.45);
   border-radius: 4px;
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
 }
 
-.sing-gate button + button {
-  color: #f0f0fa;
-  background: transparent;
-  border-color: rgba(240, 240, 250, 0.45);
+.sing-gate button:hover,
+.sing-gate button:focus-visible,
+.sing-gate button[aria-pressed="true"] {
+  color: #050506;
+  background: #f0f0fa;
+  border-color: #f0f0fa;
 }
 
 .sing-gate button:disabled {
@@ -2227,6 +2272,12 @@ svg {
     right: 18px;
   }
 
+  .has-custom-detail .sing-session-chooser {
+    min-width: 112px;
+    height: 42px;
+    padding: 0 12px;
+  }
+
   .sing-song-meta {
     top: 7px;
     max-width: 42vw;
@@ -2258,6 +2309,8 @@ svg {
 
   .sing-mode {
     top: 64px;
+    left: 0;
+    transform: none;
   }
 
   .sing-mode button {

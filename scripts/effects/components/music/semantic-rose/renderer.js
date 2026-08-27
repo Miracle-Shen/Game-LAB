@@ -57,13 +57,13 @@ export function renderKaraokeDetail({ backingAudioUrl, originalAudioUrl, icon })
         </div>
         <canvas class="sing-pitch-lane" data-sing-pitch-lane aria-label="标准音高与实时演唱音高"></canvas>
       </div>
-      <div class="sing-gate" data-sing-gate>
-        <p>ON THE RUN · VERSE 01</p>
+      <div class="sing-gate" id="sing-session-choice" data-sing-gate>
+        <p>选择体验方式</p>
         <div>
-          <button type="button" data-sing-start>开始演唱</button>
-          <button type="button" data-sing-preview>原唱试听</button>
+          <button type="button" data-sing-start aria-pressed="false">开始演唱</button>
+          <button type="button" data-sing-preview aria-pressed="false">原唱试听</button>
         </div>
-        <span data-sing-gate-status>BACKING TRACK + MICROPHONE</span>
+        <span data-sing-gate-status>可随时从右上角重新选择</span>
       </div>
       <div class="sing-result-actions" data-sing-result-actions hidden>
         <button type="button" data-sing-export aria-label="保存或分享演唱结果">
@@ -504,7 +504,7 @@ function displayPitchOffset(errorSemitones, pixelsPerSemitone) {
   return Math.tanh(errorSemitones / 2.8) * Math.min(pixelsPerSemitone * 2.7, 42);
 }
 
-function buildActualHeartTrace(history, centerX, centerY, scale, pixelsPerSemitone, completed) {
+function buildActualHeartTrace(history, centerX, centerY, scale, pixelsPerSemitone, completed, liveSample = null) {
   const samples = history
     .filter((point) => point.voiced && Number.isFinite(point.actualMidi) && Number.isFinite(point.targetMidi))
     .map((point) => ({
@@ -512,6 +512,15 @@ function buildActualHeartTrace(history, centerX, centerY, scale, pixelsPerSemito
       error: point.errorSemitones,
       accuracy: point.accuracy,
     }));
+  if (!completed && liveSample?.voiced && Number.isFinite(liveSample.actualMidi) && Number.isFinite(liveSample.targetMidi)) {
+    const progress = clamp(liveSample.progress, 0, 1);
+    const error = clamp(liveSample.actualMidi - liveSample.targetMidi, -MAX_PITCH_ERROR, MAX_PITCH_ERROR);
+    const accuracy = Math.exp(-error * error / 2.4);
+    const latest = samples.at(-1);
+    if (!latest || progress - latest.progress > 0.0001) {
+      samples.push({ progress, error, accuracy });
+    }
+  }
   if (!samples.length) return [];
 
   if (completed) {
@@ -629,34 +638,36 @@ function drawHeartAtmosphere(ctx, width, height, centerX, centerY, scale, qualit
 }
 
 function drawActualHeart(ctx, points, quality, completed, now) {
-  if (points.length < 2) return;
+  if (!points.length) return;
 
   ctx.save();
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   ctx.globalCompositeOperation = "lighter";
-  ctx.strokeStyle = `rgba(255,54,135,${0.2 + quality * 0.18})`;
-  ctx.lineWidth = 13 + quality * 8;
-  ctx.shadowBlur = 18 + quality * 24;
-  ctx.shadowColor = quality > 0.72 ? "rgba(84,255,211,.82)" : "rgba(255,62,139,.78)";
-  tracePoints(ctx, points);
-  ctx.stroke();
-
-  for (let index = 1; index < points.length; index += 1) {
-    const from = points[index - 1];
-    const to = points[index];
-    const accuracy = (from.accuracy + to.accuracy) * 0.5;
-    const red = Math.round(255 - accuracy * 142);
-    const green = Math.round(92 + accuracy * 163);
-    const blue = Math.round(145 + accuracy * 68);
-    ctx.strokeStyle = `rgba(${red},${green},${blue},.98)`;
-    ctx.lineWidth = 2.8 + accuracy * 3.4;
-    ctx.shadowBlur = 7 + accuracy * 20;
-    ctx.shadowColor = `rgba(${red},${green},${blue},.9)`;
-    ctx.beginPath();
-    ctx.moveTo(from.x, from.y);
-    ctx.lineTo(to.x, to.y);
+  if (points.length > 1) {
+    ctx.strokeStyle = `rgba(255,54,135,${0.2 + quality * 0.18})`;
+    ctx.lineWidth = 13 + quality * 8;
+    ctx.shadowBlur = 18 + quality * 24;
+    ctx.shadowColor = quality > 0.72 ? "rgba(84,255,211,.82)" : "rgba(255,62,139,.78)";
+    tracePoints(ctx, points);
     ctx.stroke();
+
+    for (let index = 1; index < points.length; index += 1) {
+      const from = points[index - 1];
+      const to = points[index];
+      const accuracy = (from.accuracy + to.accuracy) * 0.5;
+      const red = Math.round(255 - accuracy * 142);
+      const green = Math.round(92 + accuracy * 163);
+      const blue = Math.round(145 + accuracy * 68);
+      ctx.strokeStyle = `rgba(${red},${green},${blue},.98)`;
+      ctx.lineWidth = 2.8 + accuracy * 3.4;
+      ctx.shadowBlur = 7 + accuracy * 20;
+      ctx.shadowColor = `rgba(${red},${green},${blue},.9)`;
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(to.x, to.y);
+      ctx.stroke();
+    }
   }
 
   const cometCount = completed ? Math.round(2 + quality * 6) : quality > 0.72 ? 2 : 1;
@@ -689,7 +700,7 @@ function drawActualHeart(ctx, points, quality, completed, now) {
   ctx.restore();
 }
 
-function drawHeartLane(canvas, chart, history, progress, score, completed, now, activeNote, currentPitch, hasVoice, outputSize = null, musicLevel = 0) {
+function drawHeartLane(canvas, chart, history, progress, score, completed, now, activeNote, currentPitch, traceTargetPitch, hasVoice, outputSize = null, musicLevel = 0) {
   const { width, height, dpr } = resizeCanvas(canvas, outputSize);
   const ctx = canvas.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -799,7 +810,20 @@ function drawHeartLane(canvas, chart, history, progress, score, completed, now, 
     ctx.restore();
   });
 
-  const actualTrace = buildActualHeartTrace(history, centerX, centerY, heartScale, pixelsPerSemitone, completed);
+  const actualTrace = buildActualHeartTrace(
+    history,
+    centerX,
+    centerY,
+    heartScale,
+    pixelsPerSemitone,
+    completed,
+    {
+      progress,
+      actualMidi: currentPitch,
+      targetMidi: traceTargetPitch,
+      voiced: hasVoice,
+    },
+  );
   drawActualHeart(ctx, actualTrace, quality, completed, now);
 
   const cursorPoint = heartPoint(clamp(progress, 0, 1), centerX, centerY, heartScale);
@@ -921,7 +945,7 @@ function drawHeartLane(canvas, chart, history, progress, score, completed, now, 
 function drawHeartPoster(canvas, chart, history, score) {
   const width = 1080;
   const height = 1440;
-  drawHeartLane(canvas, chart, history, 1, score, true, 6840, null, 0, false, { width, height });
+  drawHeartLane(canvas, chart, history, 1, score, true, 6840, null, 0, null, false, { width, height });
 }
 
 function canvasToPng(canvas) {
@@ -960,6 +984,8 @@ export function mountKaraoke({ root, instance, chartUrl }) {
   const gateStatus = stage.querySelector("[data-sing-gate-status]");
   const startButton = stage.querySelector("[data-sing-start]");
   const previewButton = stage.querySelector("[data-sing-preview]");
+  const chooserButton = root.querySelector("[data-sing-choose]");
+  const chooserLabel = chooserButton?.querySelector("[data-sing-session-label]");
   const resultActions = stage.querySelector("[data-sing-result-actions]");
   const exportButton = stage.querySelector("[data-sing-export]");
   const exportLabel = stage.querySelector("[data-sing-export-label]");
@@ -991,6 +1017,7 @@ export function mountKaraoke({ root, instance, chartUrl }) {
   let eligibleSamples = 0;
   let accuracyTotal = 0;
   let currentPitchMidi = 0;
+  let currentTraceTargetMidi = null;
   let heartProgress = 0;
   let smoothedPitchError = 0;
   let lastVoicedSampleTime = Number.NEGATIVE_INFINITY;
@@ -1000,6 +1027,8 @@ export function mountKaraoke({ root, instance, chartUrl }) {
   let resultFile = null;
   let resultFilePromise = null;
   let exportGeneration = 0;
+  let sessionGeneration = 0;
+  let selectedSession = null;
 
   fetch(chartUrl)
     .then((response) => response.text())
@@ -1041,6 +1070,41 @@ export function mountKaraoke({ root, instance, chartUrl }) {
     });
   }
 
+  function syncSessionControls(chooserOpen = false) {
+    startButton.setAttribute("aria-pressed", String(selectedSession === "sing"));
+    previewButton.setAttribute("aria-pressed", String(selectedSession === "preview"));
+    if (!chooserButton || !chooserLabel) return;
+    const sessionLabel = selectedSession === "sing" ? "演唱" : "试听";
+    chooserButton.setAttribute("aria-expanded", String(chooserOpen));
+    chooserButton.setAttribute(
+      "aria-label",
+      chooserOpen ? "体验模式选择已打开" : `当前为${sessionLabel}，切换体验模式`,
+    );
+    chooserButton.dataset.session = selectedSession || "choose";
+    chooserLabel.textContent = chooserOpen
+      ? "试听 / 演唱"
+      : completed ? `${sessionLabel}完成` : `${sessionLabel}中`;
+  }
+
+  function showSessionChooser() {
+    sessionGeneration += 1;
+    running = false;
+    audio.pause();
+    audio.currentTime = 0;
+    cancelAnimationFrame(animationFrame);
+    setMicrophoneCapture(false);
+    resetPerformance();
+    visualState.playing = false;
+    stateElement.textContent = "READY";
+    gate.querySelector("p").textContent = "选择体验方式";
+    gateStatus.textContent = "可随时从右上角重新选择";
+    startButton.textContent = selectedSession === "sing" ? "重新演唱" : "开始演唱";
+    startButton.disabled = false;
+    previewButton.disabled = false;
+    gate.hidden = false;
+    syncSessionControls(true);
+  }
+
   async function enableMicrophone() {
     if (micEnabled) return;
     if (!navigator.mediaDevices?.getUserMedia) throw new Error("unsupported");
@@ -1072,6 +1136,7 @@ export function mountKaraoke({ root, instance, chartUrl }) {
     pitchErrorWindow.length = 0;
     pitchStabilizer.reset();
     currentPitchMidi = 0;
+    currentTraceTargetMidi = null;
     heartProgress = 0;
     smoothedPitchError = 0;
     lastVoicedSampleTime = Number.NEGATIVE_INFINITY;
@@ -1112,6 +1177,7 @@ export function mountKaraoke({ root, instance, chartUrl }) {
         now,
         activeNote,
         currentPitchMidi,
+        currentTraceTargetMidi,
         visualState.voiced,
         null,
         visualState.musicLevel,
@@ -1209,6 +1275,10 @@ export function mountKaraoke({ root, instance, chartUrl }) {
   }
 
   async function start(withMicrophone) {
+    const generation = ++sessionGeneration;
+    selectedSession = withMicrophone ? "sing" : "preview";
+    completed = false;
+    syncSessionControls(false);
     startButton.disabled = true;
     previewButton.disabled = true;
     gateStatus.textContent = withMicrophone ? "LOADING BACKING TRACK" : "LOADING ORIGINAL VOCAL";
@@ -1217,6 +1287,7 @@ export function mountKaraoke({ root, instance, chartUrl }) {
     try {
       ensureAudioGraph();
       await audioContext.resume();
+      if (generation !== sessionGeneration) return false;
       selectAudioTrack(withMicrophone);
       resetPerformance();
       visualState.heartMode = mode === "heart";
@@ -1224,6 +1295,10 @@ export function mountKaraoke({ root, instance, chartUrl }) {
       if (withMicrophone) {
         try {
           await enableMicrophone();
+          if (generation !== sessionGeneration) {
+            setMicrophoneCapture(false);
+            return false;
+          }
           setMicrophoneCapture(true);
           stateElement.textContent = "LISTENING";
         } catch {
@@ -1231,13 +1306,23 @@ export function mountKaraoke({ root, instance, chartUrl }) {
         }
       }
       await audio.play();
+      if (generation !== sessionGeneration) {
+        audio.pause();
+        return false;
+      }
       running = true;
       visualState.playing = true;
       gate.hidden = true;
+      syncSessionControls(false);
+      return true;
     } catch {
+      if (generation !== sessionGeneration) return false;
       gateStatus.textContent = "AUDIO UNAVAILABLE";
       startButton.disabled = false;
       previewButton.disabled = false;
+      gate.hidden = false;
+      syncSessionControls(true);
+      return false;
     }
   }
 
@@ -1265,6 +1350,7 @@ export function mountKaraoke({ root, instance, chartUrl }) {
     activeNote = chart.notes.find((note) => time >= note.start && time <= note.end) || null;
     guideNote = activeNote || chart.notes.find((note) => note.start > time) || null;
     const traceTargetMidi = targetMidiAtTime(chart, time);
+    currentTraceTargetMidi = traceTargetMidi;
     heartProgress = heartProgressAtTime(chart, time);
     let pitchMidi = currentPitchMidi;
     let level = 0;
@@ -1393,8 +1479,13 @@ export function mountKaraoke({ root, instance, chartUrl }) {
     animationFrame = requestAnimationFrame(update);
   }
 
-  const onStart = () => start(true).then(beginLoop);
-  const onPreview = () => start(false).then(beginLoop);
+  const onStart = () => start(true).then((started) => {
+    if (started) beginLoop();
+  });
+  const onPreview = () => start(false).then((started) => {
+    if (started) beginLoop();
+  });
+  const onChooseSession = () => showSessionChooser();
   const onModeChange = (event) => setMode(event.currentTarget.dataset.singMode);
   const onEnded = () => {
     running = false;
@@ -1416,11 +1507,13 @@ export function mountKaraoke({ root, instance, chartUrl }) {
     previewButton.disabled = false;
     resultActions.hidden = mode !== "heart";
     prepareResultFile().catch(() => {});
+    syncSessionControls(!gate.hidden);
     if (mode === "heart") beginLoop();
   };
 
   startButton.addEventListener("click", onStart);
   previewButton.addEventListener("click", onPreview);
+  chooserButton?.addEventListener("click", onChooseSession);
   exportButton.addEventListener("click", shareResult);
   modeButtons.forEach((button) => button.addEventListener("click", onModeChange));
   audio.addEventListener("ended", onEnded);
@@ -1448,6 +1541,7 @@ export function mountKaraoke({ root, instance, chartUrl }) {
       visualState.playing = true;
       setMicrophoneCapture(singingSession);
       gate.hidden = true;
+      syncSessionControls(false);
       audio.play().catch(() => {});
       beginLoop();
     },
@@ -1460,6 +1554,7 @@ export function mountKaraoke({ root, instance, chartUrl }) {
       audioContext?.close().catch(() => {});
       startButton.removeEventListener("click", onStart);
       previewButton.removeEventListener("click", onPreview);
+      chooserButton?.removeEventListener("click", onChooseSession);
       exportButton.removeEventListener("click", shareResult);
       modeButtons.forEach((button) => button.removeEventListener("click", onModeChange));
       audio.removeEventListener("ended", onEnded);
