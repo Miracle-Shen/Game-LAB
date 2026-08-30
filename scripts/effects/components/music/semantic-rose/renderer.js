@@ -700,7 +700,7 @@ function drawActualHeart(ctx, points, quality, completed, now) {
   ctx.restore();
 }
 
-function drawHeartLane(canvas, chart, history, progress, score, completed, now, activeNote, currentPitch, traceTargetPitch, hasVoice, outputSize = null, musicLevel = 0) {
+function drawHeartLane(canvas, chart, history, progress, score, completed, now, activeNote, guideNote, currentPitch, traceTargetPitch, hasVoice, outputSize = null, musicLevel = 0) {
   const { width, height, dpr } = resizeCanvas(canvas, outputSize);
   const ctx = canvas.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -714,6 +714,8 @@ function drawHeartLane(canvas, chart, history, progress, score, completed, now, 
   const quality = Number.isFinite(score) ? clamp(score / 100, 0, 1) : completed ? 0.82 : 0;
   const beat = heartBeat(now, quality, completed, musicLevel);
   const heartScale = scale * beat.scale;
+  const standardGuideActive = !completed;
+  const standardArcWidth = width >= 900 ? 5.4 : width >= 640 ? 4.4 : 3.6;
 
   ctx.fillStyle = "#020205";
   ctx.fillRect(0, 0, width, height);
@@ -764,12 +766,12 @@ function drawHeartLane(canvas, chart, history, progress, score, completed, now, 
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   ctx.lineWidth = Math.max(10, inTuneOffset * 2);
-  ctx.strokeStyle = hasVoice && !completed ? "rgba(255,181,112,.08)" : "rgba(255,181,112,.035)";
+  ctx.strokeStyle = standardGuideActive ? "rgba(255,181,112,.07)" : "rgba(255,181,112,.035)";
   traceHeart(ctx, centerX, centerY, heartScale);
   ctx.stroke();
-  ctx.lineWidth = hasVoice && !completed ? 2.1 : 1.1;
-  ctx.strokeStyle = hasVoice && !completed ? "rgba(255,235,210,.5)" : "rgba(255,235,210,.13)";
-  ctx.shadowBlur = hasVoice && !completed ? 10 : 0;
+  ctx.lineWidth = standardGuideActive ? 1.9 : 1.1;
+  ctx.strokeStyle = standardGuideActive ? "rgba(255,235,210,.38)" : "rgba(255,235,210,.13)";
+  ctx.shadowBlur = standardGuideActive ? 8 : 0;
   ctx.shadowColor = "rgba(255,122,166,.36)";
   traceHeart(ctx, centerX, centerY, heartScale);
   ctx.stroke();
@@ -779,8 +781,8 @@ function drawHeartLane(canvas, chart, history, progress, score, completed, now, 
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   ctx.lineWidth = 1;
-  ctx.strokeStyle = hasVoice && !completed ? "rgba(103,255,205,.1)" : "rgba(103,255,205,.045)";
-  ctx.shadowBlur = hasVoice && !completed ? 2 : 0;
+  ctx.strokeStyle = standardGuideActive ? "rgba(103,255,205,.085)" : "rgba(103,255,205,.045)";
+  ctx.shadowBlur = standardGuideActive ? 2 : 0;
   ctx.shadowColor = "rgba(63,255,194,.12)";
   traceHeart(ctx, centerX, centerY, heartScale, 1, -inTuneOffset);
   ctx.stroke();
@@ -789,26 +791,66 @@ function drawHeartLane(canvas, chart, history, progress, score, completed, now, 
   ctx.restore();
 
   chart.notes.forEach((note) => {
-    const isActive = note === activeNote && hasVoice;
+    const isActive = note === activeNote;
     const isPast = note.heartEnd < progress;
-    const standardLineActive = hasVoice && !completed;
+    const standardLineActive = standardGuideActive;
     const liveAccuracy = clamp(history.at(-1)?.accuracy || 0, 0, 1);
     ctx.save();
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    ctx.lineWidth = isActive ? 6 + liveAccuracy * 3 : standardLineActive ? 2.5 : 1.3;
+    ctx.lineWidth = isActive ? 7 + liveAccuracy * 3 : standardLineActive ? standardArcWidth : 1.3;
     ctx.strokeStyle = isActive
       ? `rgba(255,215,133,${0.82 + liveAccuracy * 0.18})`
       : completed ? "rgba(255,236,218,.08)"
         : standardLineActive
-          ? isPast ? "rgba(255,236,218,.12)" : note.golden ? "rgba(255,196,92,.3)" : "rgba(255,255,255,.2)"
+          ? isPast ? "rgba(255,236,218,.18)" : note.golden ? "rgba(255,196,92,.48)" : "rgba(255,255,255,.34)"
           : "rgba(255,255,255,.08)";
-    ctx.shadowBlur = isActive ? 14 + liveAccuracy * 14 : 0;
-    ctx.shadowColor = isActive ? "rgba(255,92,151,.9)" : "transparent";
+    ctx.shadowBlur = isActive ? 14 + liveAccuracy * 14 : standardLineActive ? Math.max(2, standardArcWidth * 0.7) : 0;
+    ctx.shadowColor = isActive
+      ? "rgba(255,92,151,.9)"
+      : standardLineActive ? note.golden ? "rgba(255,196,92,.34)" : "rgba(255,255,255,.22)" : "transparent";
     traceHeartRange(ctx, centerX, centerY, heartScale, note.heartStart, note.heartEnd);
     ctx.stroke();
     ctx.restore();
   });
+
+  const standardGuideNote = activeNote || guideNote;
+  if (!completed && standardGuideNote) {
+    const guideProgress = (standardGuideNote.heartStart + standardGuideNote.heartEnd) * 0.5;
+    const guideAnchor = heartPoint(guideProgress, centerX, centerY, heartScale);
+    const radialX = guideAnchor.x - centerX;
+    const radialY = guideAnchor.y - centerY;
+    const radialLength = Math.hypot(radialX, radialY) || 1;
+    const labelDistance = width < 640 ? -18 : 24;
+    const rawLabelX = guideAnchor.x + radialX / radialLength * labelDistance;
+    const rawLabelY = guideAnchor.y + radialY / radialLength * labelDistance;
+    const labelText = `${activeNote ? "TARGET" : "NEXT"} ${noteName(standardGuideNote.midi)}`;
+    const fontSize = width < 560 ? 9 : 10;
+    ctx.save();
+    ctx.font = `700 ${fontSize}px Arial`;
+    const labelWidth = Math.ceil(ctx.measureText(labelText).width) + 18;
+    const labelHeight = width < 560 ? 21 : 23;
+    const labelX = clamp(rawLabelX, labelWidth * 0.5 + 8, width - labelWidth * 0.5 - 8);
+    const labelY = clamp(rawLabelY, labelHeight * 0.5 + 8, height - labelHeight * 0.5 - 8);
+    ctx.strokeStyle = activeNote ? "rgba(255,214,139,.42)" : "rgba(255,255,255,.2)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(guideAnchor.x, guideAnchor.y);
+    ctx.lineTo(labelX, labelY);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(2,2,7,.82)";
+    ctx.strokeStyle = activeNote ? "rgba(255,214,139,.62)" : "rgba(255,255,255,.3)";
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(labelX - labelWidth * 0.5, labelY - labelHeight * 0.5, labelWidth, labelHeight, labelHeight * 0.5);
+    else ctx.rect(labelX - labelWidth * 0.5, labelY - labelHeight * 0.5, labelWidth, labelHeight);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = activeNote ? "#ffe0a7" : "rgba(255,255,255,.78)";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(labelText, labelX, labelY + 0.5);
+    ctx.restore();
+  }
 
   const actualTrace = buildActualHeartTrace(
     history,
@@ -860,13 +902,10 @@ function drawHeartLane(canvas, chart, history, progress, score, completed, now, 
       const cents = Number.isFinite(currentPitch) && currentPitch > 0
         ? Math.round((currentPitch - activeNote.midi) * 100)
         : null;
-      ctx.fillStyle = "rgba(255,255,255,.92)";
-      ctx.font = "700 11px Arial";
-      ctx.textAlign = "center";
-      ctx.fillText(`TARGET ${noteName(activeNote.midi)}`, cursorPoint.x, cursorPoint.y - 24);
       if (cents !== null) {
         ctx.fillStyle = Math.abs(cents) <= 50 ? "rgba(111,255,211,.95)" : "rgba(255,164,119,.94)";
         ctx.font = "700 9px Arial";
+        ctx.textAlign = "center";
         ctx.fillText(`${cents > 0 ? "+" : ""}${cents} CENT`, cursorPoint.x, cursorPoint.y + 25);
       }
     }
@@ -945,7 +984,7 @@ function drawHeartLane(canvas, chart, history, progress, score, completed, now, 
 function drawHeartPoster(canvas, chart, history, score) {
   const width = 1080;
   const height = 1440;
-  drawHeartLane(canvas, chart, history, 1, score, true, 6840, null, 0, null, false, { width, height });
+  drawHeartLane(canvas, chart, history, 1, score, true, 6840, null, null, 0, null, false, { width, height });
 }
 
 function canvasToPng(canvas) {
@@ -1176,6 +1215,7 @@ export function mountKaraoke({ root, instance, chartUrl }) {
         completed,
         now,
         activeNote,
+        guideNote,
         currentPitchMidi,
         currentTraceTargetMidi,
         visualState.voiced,

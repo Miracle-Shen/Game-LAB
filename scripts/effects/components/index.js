@@ -46,6 +46,7 @@ import projectileHitChain from "./game/projectile-hit-chain/index.js";
 import coverDepthFade from "./game/cover-depth-fade/index.js";
 import semanticRose from "./music/semantic-rose/index.js";
 import voiceLyricBloom from "./music/voice-lyric-bloom/index.js";
+import porcelainSongReveal from "./music/porcelain-song-reveal/index.js";
 import rewardDing from "./sound/reward-ding/index.js";
 import negativeBeeps from "./sound/negative-beeps/index.js";
 import glassBreak from "./sound/glass-break/index.js";
@@ -186,6 +187,7 @@ export const effectComponents = [
   coverDepthFade,
   semanticRose,
   voiceLyricBloom,
+  porcelainSongReveal,
   rewardDing,
   negativeBeeps,
   glassBreak,
